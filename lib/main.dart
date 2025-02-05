@@ -3,10 +3,10 @@ import 'dart:io';
 // import 'package:ffmpeg_kit_flutter/media_information.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter/return_code.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
 import 'package:clipboard/clipboard.dart';
-import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/ffprobe_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -89,12 +89,18 @@ Future<bool> requestStoragePermission() async {
 
 class _VideoConverterPageState extends State<VideoConverterPage>
     with WidgetsBindingObserver {
+  final ScrollController _scrollController = ScrollController();
+  String sf = '@f_'; //selected file string
+  String fsl = '@s_'; // file save location
+
+  bool isSwitched = false;
   String? selectedFilePath;
   String conversionCommand = '';
   double progress = 0.0;
   bool isConverting = false;
   String? fullCommand;
   String logOutput = '';
+  String SelectedFileInfo = '';
   bool _isError = false;
   String manualPath = '';
   late List<DropdownMenuItem<String>> dropdownItems;
@@ -109,6 +115,11 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     clearCacheOnStart();
     super.initState();
     //_loadSettings();
+  }
+
+  // Call this method whenever new content is added (e.g., in your setState)
+  void _scrollToBottom() {
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
   }
 
   String formatFileSize(String bitRateStr, String durationStr) {
@@ -141,19 +152,23 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     }
   }
 
-  void showCustomFilePicker(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // Prevent accidental closing
-      builder: (context) {
-        return CustomFilePicker(parentPath, setState, context, getVideoInfo);
-      },
-    );
+  void showCustomFilePicker(BuildContext context) async {
+    var status = await requestStoragePermission();
+    if (status) {
+      showDialog(
+        context: context,
+        barrierDismissible: false, // Prevent accidental closing
+        builder: (context) {
+          return CustomFilePicker(parentPath, setState, context, getVideoInfo);
+        },
+      );
+    }
   }
 
   @override
   void dispose() {
     // Perform cleanup
+    _scrollController.dispose();
     clearCacheOnStart();
     WidgetsBinding.instance.removeObserver(this);
     print('Widget disposed.');
@@ -209,11 +224,11 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       try {
         result = await FilePicker.platform.pickFiles(
             type: FileType.any, withData: false, withReadStream: false);
+        io = result?.files.single.path;
+        getVideoInfo(io!);
       } catch (e) {
         print('Error in selecting file');
       }
-      io = result?.files.single.path;
-      getVideoInfo(io!);
     } else {
       showCustomFilePicker(context);
     }
@@ -224,7 +239,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     final mediaInfo = session.getMediaInformation();
     if (filePath.isNotEmpty && mediaInfo != null) {
       Map<dynamic, dynamic>? mp = mediaInfo.getAllProperties();
-      List stream = mp?['streams'];
+      List stream = mp!['streams'];
 
       final information = StringBuffer();
       int len = 0;
@@ -237,6 +252,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
         selectedFilePath = filePath;
         _isError = false;
         logOutput = information.toString();
+        SelectedFileInfo = information.toString();
       });
     } else {
       setState(() {
@@ -297,9 +313,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     //     : '';
     // String lastWord = outputname.isNotEmpty ? outputname.last : '';
     String filterTwo = filterOne
-        .replaceAll("#f", '"$selectedFilePath"')
-        .replaceAll("#s", "/storage/emulated/0/Download");
-    String executableCommand = filterTwo;
+        .replaceFirst(sf, '"$selectedFilePath"')
+        .replaceFirst(fsl, "/storage/emulated/0/Download/");
+
+    String executableCommand = '-y $filterTwo';
     setState(() {
       fullCommand = executableCommand;
       isConverting = true;
@@ -375,6 +392,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       (log) {
         setState(() {
           logOutput += '${log.getMessage()} \n';
+          _scrollToBottom();
         });
       }, // Logs the FFmpeg process
       (statistics) {
@@ -397,7 +415,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Video Converter")),
+      appBar: AppBar(title: const Text("Video Ctool")),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -409,26 +427,37 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: () {
-                  selectVideoFile(true, context);
-                },
-                child: const Text("Select Video Default file picker"),
+              Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.spaceEvenly, // Ensures spacing
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        selectVideoFile(true, context);
+                      },
+                      child: const Text("Default File Picker"),
+                    ),
+                  ),
+                  const SizedBox(width: 8), // Space between buttons
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        selectVideoFile(false, context);
+                      },
+                      child: const Text("Custom File Picker"),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  selectVideoFile(false, context);
-                },
-                child: const Text("custom file picker"),
-              ),
-              const SizedBox(height: 16),
+
               selectedFilePath != null
                   ? Row(
                       children: [
-                        const Text(
-                          "video url: ",
-                          style: TextStyle(
+                        Text(
+                          '$sf > selected file url: ',
+                          style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         Expanded(
@@ -456,15 +485,15 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         ),
                       ],
                     )
-                  : const Text("No file selected.",
-                      style: TextStyle(color: Colors.grey)),
+                  : Text('$sf > selected file url: No file selected.',
+                      style: const TextStyle(color: Colors.grey)),
               const SizedBox(height: 16),
               fullCommand != null
                   ? Row(
                       children: [
-                        const Text(
-                          "command: ",
-                          style: TextStyle(
+                        Text(
+                          '$fsl > final command: ',
+                          style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         Expanded(
@@ -492,9 +521,9 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         ),
                       ],
                     )
-                  : const Text("No fullCommand calculated.",
-                      style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 16),
+                  : Text('$fsl > final command:  No fullCommand calculated.',
+                      style: const TextStyle(color: Colors.grey)),
+              const SizedBox(height: 10),
               const Text(
                 "2. Enter your FFmpeg command:",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -502,30 +531,67 @@ class _VideoConverterPageState extends State<VideoConverterPage>
               const SizedBox(height: 8),
               TextField(
                 onChanged: (value) => conversionCommand = value,
-                maxLines: 2,
+                maxLines: 5,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  hintText: "Enter FFmpeg command",
+                  hintText:
+                      "# @f_ = Input file (like 'input.mp4')\n# @s_ = Output location (like '/0/download/'')\n# Example: -i @f_ -vcodec libx265 -crf 30 -preset slow -acodec aac -b:a 96k @s_/output.mp4",
                 ),
               ),
-              const SizedBox(height: 16),
-              if (isConverting) ...[
-                LinearProgressIndicator(value: progress / 100),
-                const SizedBox(height: 8),
-                Text("Progress: ${progress.toStringAsFixed(2)}%"),
-              ],
-              if (!isConverting)
-                ElevatedButton(
-                  onPressed: startConversion,
-                  child: const Text("Start Conversion"),
-                ),
-              if (isConverting)
-                ElevatedButton(
-                  onPressed: cancelConversion,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  child: const Text("Cancel Conversion"),
-                ),
-              const SizedBox(height: 16), // Red-colored log area
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+
+                  // Progress Bar & Status
+                  if (isConverting)
+                    Column(
+                      children: [
+                        LinearProgressIndicator(value: progress / 100),
+                        const SizedBox(height: 8),
+                        Text("Progress: ${progress.toStringAsFixed(2)}%"),
+                      ],
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  // Buttons & Switch in a Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ElevatedButton(
+                        onPressed:
+                            isConverting ? cancelConversion : startConversion,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isConverting
+                              ? Colors.red
+                              : const Color.fromARGB(255, 184, 170, 166),
+                        ),
+                        child: Text(isConverting
+                            ? "Cancel Conversion"
+                            : "Start Conversion"),
+                      ),
+                      Row(
+                        children: [
+                          const Text("event info / file info",
+                              style: TextStyle(fontSize: 14)),
+                          Switch(
+                            value:
+                                isSwitched, // Define this in State: bool isSwitched = false;
+                            onChanged: (value) {
+                              setState(() {
+                                isSwitched = value;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
+              ), // Red-colored log area
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -547,9 +613,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                     SizedBox(
                       height: 200, // Adjust the height as needed
                       child: SingleChildScrollView(
+                        controller: _scrollController,
                         scrollDirection: Axis.vertical,
                         child: SelectableText(
-                          logOutput,
+                          isSwitched ? SelectedFileInfo : logOutput,
                           style: TextStyle(
                               fontSize: 14,
                               color: _isError ? Colors.red : Colors.green),
@@ -711,7 +778,8 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
                 FileSystemEntity entity = items[index];
                 bool isDir = FileSystemEntity.isDirectorySync(entity.path);
                 String fileExtension;
-                if (!isDir &&
+                if (filterFileExtension &&
+                    !isDir &&
                     (fileExtension = entity.path.substring(
                             entity.path.lastIndexOf("."), entity.path.length))
                         .isNotEmpty &&
