@@ -521,7 +521,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         ),
                       ],
                     )
-                  : Text('$fsl > final command:  No fullCommand calculated.',
+                  : Text('$fsl > final command:  No fullCommand calculated.   ',
                       style: const TextStyle(color: Colors.grey)),
               const SizedBox(height: 10),
               const Text(
