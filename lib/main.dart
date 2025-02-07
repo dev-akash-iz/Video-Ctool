@@ -1,5 +1,4 @@
 import 'dart:io';
-
 // import 'package:ffmpeg_kit_flutter/media_information.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10,13 +9,11 @@ import 'package:ffmpeg_kit_flutter_full_gpl/ffprobe_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-// import 'package:ffmpeg_kit_flutter/media_information_session.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path/path.dart' as path;
+import 'package:flutter/services.dart';
+import 'package:video_ctool/api.dart';
 
 void main() async {
-  await Hive.initFlutter();
-  await Hive.openBox('settingsBox');
   runApp(const MyApp());
 }
 
@@ -87,6 +84,26 @@ Future<bool> requestStoragePermission() async {
   }
 }
 
+String formatFileSize(String bitRateStr, String durationStr) {
+  // Convert input strings to numbers
+  int bitRate = int.tryParse(bitRateStr) ?? 0;
+  double duration = double.tryParse(durationStr) ?? 0.0;
+
+  // Calculate total size in bytes
+  double totalBytes = (bitRate * duration) / 8;
+
+  // Convert to KB, MB, GB dynamically
+  if (totalBytes >= 1024 * 1024 * 1024) {
+    return "${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB";
+  } else if (totalBytes >= 1024 * 1024) {
+    return "${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB";
+  } else if (totalBytes >= 1024) {
+    return "${(totalBytes / 1024).toStringAsFixed(2)} KB";
+  } else {
+    return "${totalBytes.toStringAsFixed(2)} Bytes";
+  }
+}
+
 class _VideoConverterPageState extends State<VideoConverterPage>
     with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
@@ -104,42 +121,31 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   bool _isError = false;
   String manualPath = '';
   late List<DropdownMenuItem<String>> dropdownItems;
-  late Box settingsBox;
   Map<String, String> settingsMap = {};
   String? currentPath;
   String parentPath = '/storage/emulated/0/Download';
   List<FileSystemEntity> items = [];
 
+  List<dynamic> commandFromGlobal_variable = [];
+
+  void updateCommandFromApi(
+      void Function(List<dynamic>)? sIdeEffectFunction) async {
+    List<dynamic> result = await requestCommandList();
+    commandFromGlobal_variable = result;
+    sIdeEffectFunction?.call(result);
+  }
+
   @override
   void initState() {
     clearCacheOnStart();
     super.initState();
+    updateCommandFromApi(null);
     //_loadSettings();
   }
 
   // Call this method whenever new content is added (e.g., in your setState)
   void _scrollToBottom() {
     _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-  }
-
-  String formatFileSize(String bitRateStr, String durationStr) {
-    // Convert input strings to numbers
-    int bitRate = int.tryParse(bitRateStr) ?? 0;
-    double duration = double.tryParse(durationStr) ?? 0.0;
-
-    // Calculate total size in bytes
-    double totalBytes = (bitRate * duration) / 8;
-
-    // Convert to KB, MB, GB dynamically
-    if (totalBytes >= 1024 * 1024 * 1024) {
-      return "${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB";
-    } else if (totalBytes >= 1024 * 1024) {
-      return "${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB";
-    } else if (totalBytes >= 1024) {
-      return "${(totalBytes / 1024).toStringAsFixed(2)} KB";
-    } else {
-      return "${totalBytes.toStringAsFixed(2)} Bytes";
-    }
   }
 
   //clearing cashe on app start and on close
@@ -152,14 +158,27 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     }
   }
 
-  void showCustomFilePicker(BuildContext context) async {
+  void showCustomFilePicker(BuildContext Parentcontext) async {
+    showDialog(
+      context: Parentcontext,
+      barrierDismissible: false, // Prevent accidental closing
+      builder: (contextPopup) {
+        return CustomFilePicker(
+            parentPath, setState, contextPopup, getVideoInfo);
+      },
+    );
+  }
+
+  void showCommandGlobalView(BuildContext context) async {
     var status = await requestStoragePermission();
     if (status) {
       showDialog(
         context: context,
         barrierDismissible: false, // Prevent accidental closing
         builder: (context) {
-          return CustomFilePicker(parentPath, setState, context, getVideoInfo);
+          return CommandsGlobal(
+              commands: commandFromGlobal_variable,
+              loadListFun: updateCommandFromApi);
         },
       );
     }
@@ -173,25 +192,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     WidgetsBinding.instance.removeObserver(this);
     print('Widget disposed.');
     super.dispose();
-  }
-
-  // Load settings from Hive or set default values
-  Future<void> _loadSettings() async {
-    settingsBox = Hive.box('settingsBox');
-
-    // Retrieve the stored Map<String, String>, or set default values
-    var storedMap = settingsBox
-        .get('settingsMap', defaultValue: {'key1': 'value1', 'key2': 'value2'});
-
-    setState(() {
-      settingsMap = Map<String, String>.from(storedMap);
-      dropdownItems = settingsMap.keys.map((String data) {
-        return DropdownMenuItem<String>(
-          value: data,
-          child: Text(settingsMap[data]!),
-        );
-      }).toList(); // Make sure it's a Map
-    });
   }
 
   Future<int> getVideoDuration(String filePath) async {
@@ -214,6 +214,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
 
   void selectVideoFile(bool isByfilePicker, BuildContext context) async {
     clearCacheOnStart();
+    updateCommandFromApi(null);
     String? io;
     if (isByfilePicker) {
       setState(() {
@@ -230,7 +231,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
         print('Error in selecting file');
       }
     } else {
-      showCustomFilePicker(context);
+      var status = await requestStoragePermission();
+      if (status) {
+        showCustomFilePicker(context);
+      }
     }
   }
 
@@ -434,9 +438,9 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {
-                        selectVideoFile(true, context);
+                        showCommandGlobalView(context);
                       },
-                      child: const Text("Default File Picker"),
+                      child: const Text("Command Center"),
                     ),
                   ),
                   const SizedBox(width: 8), // Space between buttons
@@ -657,6 +661,7 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
   late String currentPath;
   Directory? currentdir;
   List<FileSystemEntity> items = [];
+
   bool filterFileExtension = false;
   Map<String, bool> listExtension = {
     // Video extensions
@@ -802,6 +807,384 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+//---------------------------------------------------------------------------------------->
+class CommandsGlobal extends StatefulWidget {
+  final List<dynamic> commands;
+  final Function? loadListFun;
+  const CommandsGlobal(
+      {required this.commands, required this.loadListFun, super.key});
+
+  @override
+  State<CommandsGlobal> createState() => _CommandsGlobalState();
+}
+
+class _CommandsGlobalState extends State<CommandsGlobal> {
+  List<dynamic> commands = [];
+
+  @override
+  void initState() {
+    super.initState();
+    commands = widget.commands;
+    print("called initials");
+    widget.loadListFun!((apiResult) {
+      if (mounted) {
+        setState(() {
+          commands = apiResult;
+        });
+      }
+    });
+  }
+
+  void _addCommand(Map<String, String> newCommand) {
+    setState(() {
+      commands.add(newCommand);
+    });
+  }
+
+  void _openAddCommandScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CommandFormScreen()),
+    );
+  }
+
+  void _showCommandDetail(List<dynamic> command) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (context) => CommandDetailScreen(command: command)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50], // Light background for elegance
+      appBar: AppBar(
+        title: const Text(
+          "Command List",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
+        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(16.0),
+        itemCount: commands.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final command = commands[index];
+          return Card(
+            elevation: 5,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              title: Text(
+                command[0] ?? "No Title available.",
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color.fromARGB(255, 200, 195, 213),
+                ),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  (command[2] == null || (command[2] as String) == '')
+                      ? "No description available."
+                      : command[2],
+                  style: const TextStyle(fontSize: 14, color: Colors.black87),
+                ),
+              ),
+              onTap: () => _showCommandDetail(command),
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openAddCommandScreen,
+        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+//----------------------------------------------------------------------------------------x<
+
+//---------------------------------------------------------------------------------------->
+
+class CommandFormScreen extends StatefulWidget {
+  const CommandFormScreen({super.key});
+
+  @override
+  State<CommandFormScreen> createState() => _CommandFormScreenState();
+}
+
+class _CommandFormScreenState extends State<CommandFormScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _commandController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+
+  bool _isLoading = false;
+
+  void _submitForm() {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+
+      addCommand(
+              command: _commandController.text,
+              description: _descriptionController.text,
+              title: _titleController.text)
+          .then((data) {
+        print(data);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text("Command saved!")));
+      }).catchError((error) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error: $error")));
+      }).whenComplete(() {
+        setState(() {
+          _isLoading = false;
+        });
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text(
+          'Add Command',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTextField(_titleController, "Command Title"),
+                const SizedBox(height: 20),
+                _buildTextField(_commandController, "Command", maxLines: 6),
+                const SizedBox(height: 20),
+                _buildTextField(_descriptionController, "Description",
+                    maxLines: 10),
+                const SizedBox(height: 30),
+
+                // Submit Button with Loading Indicator
+                Center(
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submitForm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 30),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
+                      elevation: 6,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            "Save Command",
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String label,
+      {int maxLines = 1}) {
+    return Card(
+      elevation: 5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: TextFormField(
+          controller: controller,
+          maxLines: maxLines,
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle:
+                const TextStyle(color: Color.fromARGB(255, 200, 195, 213)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            focusedBorder: OutlineInputBorder(
+              borderSide:
+                  const BorderSide(color: Color.fromARGB(255, 200, 195, 213)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter $label.toLowerCase()';
+            }
+            return null;
+          },
+        ),
+      ),
+    );
+  }
+}
+//----------------------------------------------------------------------------------------x<
+
+//---------------------------------------------------------------------------------------->
+
+class CommandDetailScreen extends StatelessWidget {
+  final List<dynamic> command;
+  const CommandDetailScreen({super.key, required this.command});
+
+  void _copyCommand(BuildContext context) {
+    Clipboard.setData(
+        ClipboardData(text: Uri.decodeComponent(command[1]) ?? ""));
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Command copied to clipboard!")));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50], // Light background for elegance
+      appBar: AppBar(
+        title: Text(
+          command[0] ?? "",
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Command Title
+              Card(
+                elevation: 5,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Command",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color.fromARGB(255, 209, 200, 234),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SelectableText(
+                        command[1] ?? "No command available.",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Command Description
+              Card(
+                elevation: 5,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Description",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color.fromARGB(255, 189, 179, 217),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        (command[2] == null || (command[2] as String) == '')
+                            ? "No description available."
+                            : command[2],
+                        style: const TextStyle(
+                            fontSize: 16, color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 30),
+
+              // Copy Button
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: () => _copyCommand(context),
+                  icon: const Icon(Icons.copy, color: Colors.white),
+                  label: const Text(
+                    "Use this Command",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromARGB(255, 186, 175, 218),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 30),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
+                    elevation: 6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
