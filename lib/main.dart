@@ -137,7 +137,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
 
   @override
   void initState() {
-    clearCacheOnStart();
     super.initState();
     updateCommandFromApi(null);
     //_loadSettings();
@@ -153,15 +152,15 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
   }
 
-  //clearing cashe on app start and on close
-  Future<void> clearCacheOnStart() async {
-    try {
-      final directory = await getTemporaryDirectory();
-      directory.delete(recursive: true);
-    } catch (e) {
-      print('Error deleting cache: $e');
-    }
-  }
+  // //clearing cashe on app start and on close
+  // Future<void> clearCacheOnStart() async {
+  //   try {
+  //     final directory = await getTemporaryDirectory();
+  //     directory.delete(recursive: true);
+  //   } catch (e) {
+  //     print('Error deleting cache: $e');
+  //   }
+  // }
 
   void showCustomFilePicker(BuildContext Parentcontext) async {
     showDialog(
@@ -194,7 +193,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   void dispose() {
     // Perform cleanup
     _scrollController.dispose();
-    clearCacheOnStart();
     WidgetsBinding.instance.removeObserver(this);
     print('Widget disposed.');
     super.dispose();
@@ -219,8 +217,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   }
 
   void selectVideoFile(bool isByfilePicker, BuildContext context) async {
-    clearCacheOnStart();
-    updateCommandFromApi(null);
     String? io;
     if (isByfilePicker) {
       setState(() {
@@ -363,7 +359,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
               ],
             ),
           );
-          clearCacheOnStart();
         } else if (ReturnCode.isCancel(returnCode)) {
           setState(() {
             _isError = true;
@@ -502,7 +497,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                   ? Row(
                       children: [
                         Text(
-                          '$fsl > final command: ',
+                          '$fsl > Output location : ',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 14),
                         ),
@@ -531,7 +526,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         ),
                       ],
                     )
-                  : Text('$fsl > final command:  No fullCommand calculated.   ',
+                  : Text('$fsl > Output location : will be  "Download"',
                       style: const TextStyle(color: Colors.grey)),
               const SizedBox(height: 10),
               const Text(
@@ -546,7 +541,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText:
-                      "# @f_ = Input file (like 'input.mp4')\n# @s_ = Output location (like '/0/download/'')\n# Example: -i @f_ -vcodec libx265 -crf 30 -preset slow -acodec aac -b:a 96k @s_/output.mp4",
+                      "# @f_ = Input file (like 'input.mp4')\n# @s_ = Output location ( '/0/download/'')",
                 ),
               ),
               Column(
