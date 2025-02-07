@@ -125,7 +125,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   String? currentPath;
   String parentPath = '/storage/emulated/0/Download';
   List<FileSystemEntity> items = [];
-
+  final TextEditingController _commandTypeInputBox = TextEditingController();
   List<dynamic> commandFromGlobal_variable = [];
 
   void updateCommandFromApi(
@@ -141,6 +141,11 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     super.initState();
     updateCommandFromApi(null);
     //_loadSettings();
+  }
+
+  void _updateCommandInput(String command) {
+    _commandTypeInputBox.text = command;
+    conversionCommand = command;
   }
 
   // Call this method whenever new content is added (e.g., in your setState)
@@ -178,7 +183,8 @@ class _VideoConverterPageState extends State<VideoConverterPage>
         builder: (context) {
           return CommandsGlobal(
               commands: commandFromGlobal_variable,
-              loadListFun: updateCommandFromApi);
+              loadListFun: updateCommandFromApi,
+              inputBoxController: _updateCommandInput);
         },
       );
     }
@@ -534,6 +540,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
               ),
               const SizedBox(height: 8),
               TextField(
+                controller: _commandTypeInputBox,
                 onChanged: (value) => conversionCommand = value,
                 maxLines: 5,
                 decoration: const InputDecoration(
@@ -607,10 +614,12 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Log Output:",
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    Text(
+                      isSwitched
+                          ? "File Info                                                                   "
+                          : "current event Info                                                       ",
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 8),
                     // Limit the height of the scrollable view
@@ -816,8 +825,13 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
 class CommandsGlobal extends StatefulWidget {
   final List<dynamic> commands;
   final Function? loadListFun;
+  final Function(String) inputBoxController;
+
   const CommandsGlobal(
-      {required this.commands, required this.loadListFun, super.key});
+      {required this.commands,
+      required this.loadListFun,
+      required this.inputBoxController,
+      super.key});
 
   @override
   State<CommandsGlobal> createState() => _CommandsGlobalState();
@@ -857,7 +871,8 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
     Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (context) => CommandDetailScreen(command: command)),
+          builder: (context) => CommandDetailScreen(
+              command: command, inputBoxController: widget.inputBoxController)),
     );
   }
 
@@ -1051,7 +1066,7 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
           ),
           validator: (value) {
             if (value == null || value.isEmpty) {
-              return 'Please enter $label.toLowerCase()';
+              return 'Please enter $label';
             }
             return null;
           },
@@ -1066,13 +1081,17 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
 
 class CommandDetailScreen extends StatelessWidget {
   final List<dynamic> command;
-  const CommandDetailScreen({super.key, required this.command});
+  final Function(String) inputBoxController;
+
+  const CommandDetailScreen(
+      {super.key, required this.command, required this.inputBoxController});
 
   void _copyCommand(BuildContext context) {
-    Clipboard.setData(
-        ClipboardData(text: Uri.decodeComponent(command[1]) ?? ""));
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Command copied to clipboard!")));
+    // Clipboard.setData(
+    //     ClipboardData(text: Uri.decodeComponent(command[1]) ?? ""));
+    inputBoxController(Uri.decodeComponent(command[1]));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("Command applied!")));
   }
 
   @override
