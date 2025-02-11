@@ -1,21 +1,30 @@
 import 'dart:io';
-// import 'package:ffmpeg_kit_flutter/media_information.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
-import 'package:clipboard/clipboard.dart';
 import 'package:ffmpeg_kit_flutter_full_gpl/ffprobe_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as path;
-import 'package:flutter/services.dart';
 import 'package:video_ctool/api.dart';
 
 void main() async {
   runApp(const MyApp());
 }
+
+const List<Widget> hint = [
+  Text("• Use @f_ to represent the selected video file (e.g., 'input.mp4')."),
+  Text(
+      "• Use @s_ to represent the output folder where the converted file will be saved (e.g., '/0/download/')."),
+  Text(
+      "• In your command, @f_ will automatically be replaced with the selected file's URL."),
+  Text(
+      "• Similarly, @s_ will be replaced with the download location on your Android device."),
+  Text(
+      "• This makes your command dynamic and adaptable to different files and locations."),
+];
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -25,8 +34,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
       home: const VideoConverterPage(),
     );
@@ -420,128 +429,69 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Video Ctool")),
+      appBar: AppBar(
+        title: const Text(
+          "Video Ctool",
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.blue.shade700,
+        centerTitle: true,
+      ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                "1. Select a video file:",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
               Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceEvenly, // Ensures spacing
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   Expanded(
-                    child: ElevatedButton(
+                    child: ElevatedButton.icon(
                       onPressed: () {
                         showCommandGlobalView(context);
                       },
-                      child: const Text("Command Center"),
+                      icon: const Icon(Icons.video_file),
+                      label: const Text("Command Center"),
                     ),
                   ),
-                  const SizedBox(width: 8), // Space between buttons
+                  const SizedBox(width: 8), // Adds spacing between buttons
                   Expanded(
-                    child: ElevatedButton(
+                    child: ElevatedButton.icon(
                       onPressed: () {
                         selectVideoFile(false, context);
                       },
-                      child: const Text("Custom File Picker"),
+                      icon: const Icon(Icons.video_file),
+                      label: const Text("Select Video File"),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
 
-              selectedFilePath != null
-                  ? Row(
-                      children: [
-                        Text(
-                          '$sf > selected file url: ',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        Expanded(
-                            child: SingleChildScrollView(
-                          child: Text(
-                            selectedFilePath!,
-                            overflow: TextOverflow
-                                .ellipsis, // Adds ellipsis if content is truncated
-                            maxLines: 1, // Show only 3 lines by default
-                            style: TextStyle(
-                                fontSize: 14, color: Colors.grey[700]),
-                          ),
-                        )),
-                        IconButton(
-                          icon: const Icon(Icons.copy),
-                          onPressed: () {
-                            FlutterClipboard.copy(selectedFilePath!).then((_) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text("File path copied to clipboard!")),
-                              );
-                            });
-                          },
-                        ),
-                      ],
-                    )
-                  : Text('$sf > selected file url: No file selected.',
-                      style: const TextStyle(color: Colors.grey)),
               const SizedBox(height: 16),
-              fullCommand != null
-                  ? Row(
-                      children: [
-                        Text(
-                          '$fsl > Output location : ',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        Expanded(
-                            child: SingleChildScrollView(
-                          child: Text(
-                            fullCommand!,
-                            overflow: TextOverflow
-                                .ellipsis, // Adds ellipsis if content is truncated
-                            maxLines: 1, // Show only 3 lines by default
-                            style: TextStyle(
-                                fontSize: 14, color: Colors.grey[700]),
-                          ),
-                        )),
-                        IconButton(
-                          icon: const Icon(Icons.copy),
-                          onPressed: () {
-                            FlutterClipboard.copy(fullCommand!).then((_) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text("File path copied to clipboard!")),
-                              );
-                            });
-                          },
-                        ),
-                      ],
-                    )
-                  : Text('$fsl > Output location : will be  "Download"',
-                      style: const TextStyle(color: Colors.grey)),
-              const SizedBox(height: 10),
-              const Text(
-                "2. Enter your FFmpeg command:",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              const ExpandableContainer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: hint,
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
+              // TextField(
+              //   controller: _commandTypeInputBox,
+              //   onChanged: (value) => conversionCommand = value,
+              //   maxLines: 5,
+              //   decoration: const InputDecoration(
+              //     border: OutlineInputBorder(),
+              //     hintText: "Enter FFmpeg command...",
+              //   ),
+              // ),
               TextField(
                 controller: _commandTypeInputBox,
                 onChanged: (value) => conversionCommand = value,
                 maxLines: 5,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  hintText:
-                      "# @f_ = Input file (like 'input.mp4')\n# @s_ = Output location ( '/0/download/'')",
+                  hintText: "Enter FFmpeg command...",
                 ),
               ),
               Column(
@@ -565,32 +515,41 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ElevatedButton(
-                        onPressed:
-                            isConverting ? cancelConversion : startConversion,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isConverting
-                              ? Colors.red
-                              : const Color.fromARGB(255, 184, 170, 166),
+                      // Start Conversion / Cancel Button
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              isConverting ? cancelConversion : startConversion,
+                          icon: const Icon(Icons.video_file),
+                          label: Text(isConverting
+                              ? "Cancel Conversion"
+                              : "Start Conversion"),
                         ),
-                        child: Text(isConverting
-                            ? "Cancel Conversion"
-                            : "Start Conversion"),
                       ),
-                      Row(
-                        children: [
-                          const Text("event info / file info",
-                              style: TextStyle(fontSize: 14)),
-                          Switch(
-                            value:
-                                isSwitched, // Define this in State: bool isSwitched = false;
-                            onChanged: (value) {
-                              setState(() {
-                                isSwitched = value;
-                              });
-                            },
-                          ),
-                        ],
+                      const SizedBox(
+                          width: 12), // Adds spacing between elements
+
+                      // Events/File Switch (Ensures Text & Switch stay together)
+                      Flexible(
+                        child: Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.end, // Aligns to the right
+                          children: [
+                            const Text("Event / File"),
+                            const SizedBox(width: 2),
+                            Switch(
+                              value: isSwitched,
+                              activeTrackColor: Colors.blue[100],
+                              activeColor: Colors.blue,
+                              inactiveThumbColor: Colors.green,
+                              onChanged: (value) {
+                                setState(() {
+                                  isSwitched = value;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -601,33 +560,44 @@ class _VideoConverterPageState extends State<VideoConverterPage>
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.red[50],
+                  color: _isError ? Colors.red[50] : Colors.blue[50],
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                      color: _isError ? Colors.red : Colors.green, width: 1),
+                      color: _isError ? Colors.red : Colors.blue.shade700,
+                      width: 1),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      isSwitched
-                          ? "File Info                                                                   "
-                          : "current event Info                                                       ",
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
+                    Center(
+                      child: Text(
+                        isSwitched
+                            ? "File Information"
+                            : "Current Event Information",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        textAlign: TextAlign
+                            .center, // Ensures text alignment inside the widget
+                      ),
                     ),
                     const SizedBox(height: 8),
                     // Limit the height of the scrollable view
                     SizedBox(
-                      height: 200, // Adjust the height as needed
+                      height: 200,
+                      // Adjust the height as needed
                       child: SingleChildScrollView(
                         controller: _scrollController,
                         scrollDirection: Axis.vertical,
                         child: SelectableText(
                           isSwitched ? SelectedFileInfo : logOutput,
                           style: TextStyle(
-                              fontSize: 14,
-                              color: _isError ? Colors.red : Colors.green),
+                            fontSize: 14,
+                            color: _isError
+                                ? Colors.red.shade900
+                                : Colors.blue.shade900,
+                          ),
                         ),
                       ),
                     ),
@@ -770,9 +740,27 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
     String folderName = path.basename(currentPath);
     return Scaffold(
       appBar: AppBar(
-        title: Text(folderName),
+        backgroundColor: Colors.blue.shade700,
+        title: Text(
+          folderName,
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.close,
+              color: Colors.white,
+            ), // Replace with your desired icon
+            onPressed: () {
+              widget.closeALL();
+            },
+          ),
+        ],
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(
+            Icons.arrow_back,
+            color: Colors.white,
+          ),
           onPressed: () {
             _backNavigate();
           }, // Close dialog
@@ -822,11 +810,12 @@ class CommandsGlobal extends StatefulWidget {
   final Function? loadListFun;
   final Function(String) inputBoxController;
 
-  const CommandsGlobal(
-      {required this.commands,
-      required this.loadListFun,
-      required this.inputBoxController,
-      super.key});
+  const CommandsGlobal({
+    required this.commands,
+    required this.loadListFun,
+    required this.inputBoxController,
+    super.key,
+  });
 
   @override
   State<CommandsGlobal> createState() => _CommandsGlobalState();
@@ -839,19 +828,12 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
   void initState() {
     super.initState();
     commands = widget.commands;
-    print("called initials");
     widget.loadListFun!((apiResult) {
       if (mounted) {
         setState(() {
           commands = apiResult;
         });
       }
-    });
-  }
-
-  void _addCommand(Map<String, String> newCommand) {
-    setState(() {
-      commands.add(newCommand);
     });
   }
 
@@ -862,72 +844,102 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
     );
   }
 
-  void _showCommandDetail(List<dynamic> command) {
+  void _showCommandDetail(List<dynamic> command, BuildContext context) {
     Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (context) => CommandDetailScreen(
-              command: command, inputBoxController: widget.inputBoxController)),
+        builder: (context) => CommandDetailScreen(
+          command: command,
+          inputBoxController: widget.inputBoxController,
+          parentContext: context,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50], // Light background for elegance
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text(
           "Command List",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white),
         ),
-        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        backgroundColor: Colors.blue.shade700,
         centerTitle: true,
-        elevation: 0,
+        elevation: 2,
+        automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.close,
+                color: Colors.white), // Replace with your desired icon
+            onPressed: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16.0),
-        itemCount: commands.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          final command = commands[index];
-          return Card(
-            elevation: 5,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              title: Text(
-                command[0] ?? "No Title available.",
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color.fromARGB(255, 200, 195, 213),
-                ),
+      body: commands.isEmpty
+          ? const Center(
+              child: Text(
+                "No commands available.",
+                style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  (command[2] == null || (command[2] as String) == '')
-                      ? "No description available."
-                      : command[2],
-                  style: const TextStyle(fontSize: 14, color: Colors.black87),
-                ),
-              ),
-              onTap: () => _showCommandDetail(command),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16.0),
+              itemCount: commands.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final command = commands[index];
+                return Card(
+                  elevation: 4,
+                  shadowColor: Colors.blue.shade100,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    title: Text(
+                      command[0] ?? "No Title available.",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        (command[2] == null || (command[2] as String) == '')
+                            ? "No description available."
+                            : command[2],
+                        style: const TextStyle(
+                            fontSize: 14, color: Colors.black87),
+                      ),
+                    ),
+                    trailing:
+                        const Icon(Icons.chevron_right, color: Colors.blue),
+                    onTap: () => _showCommandDetail(command, context),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAddCommandScreen,
-        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
-        child: const Icon(Icons.add),
+        backgroundColor: Colors.blue.shade700,
+        child: const Icon(
+          Icons.add,
+          color: Colors.white,
+        ),
       ),
     );
   }
 }
+
 //----------------------------------------------------------------------------------------x<
 
 //---------------------------------------------------------------------------------------->
@@ -946,6 +958,13 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
   final TextEditingController _descriptionController = TextEditingController();
 
   bool _isLoading = false;
+
+  String? _validateField(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return "This field cannot be empty.";
+    }
+    return null;
+  }
 
   void _submitForm() {
     if (_formKey.currentState!.validate()) {
@@ -979,11 +998,18 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
       appBar: AppBar(
         title: const Text(
           'Add Command',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
         ),
-        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        backgroundColor: Colors.blue.shade700,
         elevation: 0,
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.pop(context); // Go back to the previous screen
+          },
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -995,10 +1021,10 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
               children: [
                 _buildTextField(_titleController, "Command Title"),
                 const SizedBox(height: 20),
-                _buildTextField(_commandController, "Command", maxLines: 6),
+                _buildTextField(_commandController, "Command", maxLines: 5),
                 const SizedBox(height: 20),
                 _buildTextField(_descriptionController, "Description",
-                    maxLines: 10),
+                    maxLines: 6),
                 const SizedBox(height: 30),
 
                 // Submit Button with Loading Indicator
@@ -1006,7 +1032,7 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _submitForm,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+                      backgroundColor: Colors.blue.shade700,
                       padding: const EdgeInsets.symmetric(
                           vertical: 12, horizontal: 30),
                       shape: RoundedRectangleBorder(
@@ -1018,6 +1044,7 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
+                              backgroundColor: Colors.blue,
                               color: Colors.white,
                               strokeWidth: 2,
                             ),
@@ -1025,7 +1052,9 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
                         : const Text(
                             "Save Command",
                             style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w600),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white),
                           ),
                   ),
                 ),
@@ -1049,22 +1078,16 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
           controller: controller,
           maxLines: maxLines,
           decoration: InputDecoration(
-            labelText: label,
-            labelStyle:
-                const TextStyle(color: Color.fromARGB(255, 200, 195, 213)),
+            hintText: label, // Show label text in the center when idle
+            hintStyle: const TextStyle(color: Colors.blue),
+
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             focusedBorder: OutlineInputBorder(
-              borderSide:
-                  const BorderSide(color: Color.fromARGB(255, 200, 195, 213)),
+              borderSide: const BorderSide(color: Colors.blue),
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter $label';
-            }
-            return null;
-          },
+          validator: _validateField,
         ),
       ),
     );
@@ -1077,9 +1100,12 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
 class CommandDetailScreen extends StatelessWidget {
   final List<dynamic> command;
   final Function(String) inputBoxController;
-
+  final BuildContext parentContext;
   const CommandDetailScreen(
-      {super.key, required this.command, required this.inputBoxController});
+      {super.key,
+      required this.command,
+      required this.inputBoxController,
+      required this.parentContext});
 
   void _copyCommand(BuildContext context) {
     // Clipboard.setData(
@@ -1096,11 +1122,28 @@ class CommandDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           command[0] ?? "",
-          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+              fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
         ),
-        backgroundColor: const Color.fromARGB(255, 200, 195, 213),
+        backgroundColor: Colors.blue.shade700,
         elevation: 0,
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.pop(context); // Go back to the previous screen
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.close,
+                color: Colors.white), // Replace with your desired icon
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -1124,7 +1167,7 @@ class CommandDetailScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Color.fromARGB(255, 209, 200, 234),
+                          color: Colors.blue,
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -1159,7 +1202,7 @@ class CommandDetailScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Color.fromARGB(255, 189, 179, 217),
+                          color: Colors.blue,
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -1184,10 +1227,13 @@ class CommandDetailScreen extends StatelessWidget {
                   icon: const Icon(Icons.copy, color: Colors.white),
                   label: const Text(
                     "Use this Command",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromARGB(255, 186, 175, 218),
+                    backgroundColor: Colors.blue.shade700,
                     padding: const EdgeInsets.symmetric(
                         vertical: 12, horizontal: 30),
                     shape: RoundedRectangleBorder(
@@ -1200,6 +1246,74 @@ class CommandDetailScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class ExpandableContainer extends StatefulWidget {
+  final Widget child;
+
+  const ExpandableContainer({super.key, required this.child});
+
+  @override
+  _ExpandableContainerState createState() => _ExpandableContainerState();
+}
+
+class _ExpandableContainerState extends State<ExpandableContainer>
+    with SingleTickerProviderStateMixin {
+  bool isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              isExpanded = !isExpanded;
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue[100], // Background color
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade900),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  "Show Hints",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                Icon(
+                  isExpanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  color: Colors.blue.shade800,
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.fastLinearToSlowEaseIn,
+          child: isExpanded
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50], // Slightly lighter shade
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: widget.child, // Static text or any content
+                )
+              : const SizedBox(), // Takes no space when collapsed
+        ),
+      ],
     );
   }
 }
