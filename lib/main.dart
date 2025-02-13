@@ -93,24 +93,133 @@ Future<bool> requestStoragePermission() async {
   }
 }
 
-String formatFileSize(String bitRateStr, String durationStr) {
-  // Convert input strings to numbers
-  int bitRate = int.tryParse(bitRateStr) ?? 0;
-  double duration = double.tryParse(durationStr) ?? 0.0;
+double? parseFrameRate(String? avgFrameRate) {
+  if (avgFrameRate == null || !avgFrameRate.contains('/')) return null;
 
+  try {
+    final parts = avgFrameRate.split('/');
+    final num numerator = num.tryParse(parts[0]) ?? 0;
+    final num denominator = num.tryParse(parts[1]) ?? 1;
+
+    if (denominator == 0) return null; // Prevent division by zero
+
+    return numerator / denominator;
+  } catch (e) {
+    return null; // Return null on any unexpected error
+  }
+}
+
+double estimateAudioSize({
+  required String codec,
+  required int sampleRate,
+  required double duration,
+}) {
+  // Approximate bitrates (bps) for different codecs
+  Map<String, int> codecBitrates = {
+    "vorbis": 128000, // Default Vorbis bitrate (128 kbps)
+    "aac": 128000, // AAC (similar to Vorbis)
+    "mp3": 192000, // MP3 commonly uses 192 kbps
+    "opus": 96000, // Opus (highly efficient)
+    "flac": 1000000, // FLAC (lossless, ~1 Mbps)
+    "wav": sampleRate *
+        16 *
+        2, // WAV (PCM uncompressed: sampleRate × bitDepth × channels)
+  };
+
+  // Get bitrate or default to 128 kbps
+  int bitrate = codecBitrates[codec.toLowerCase()] ?? 128000;
+
+  // Calculate file size (bytes)
+  double fileSizeBytes = (bitrate * duration) / 8;
+
+  // Convert to MB
+  return fileSizeBytes / (1024 * 1024);
+}
+
+double estimateVideoSize({
+  required int width,
+  required int height,
+  required double frameRate,
+  required double duration,
+  required String codec,
+}) {
+  // Approximate bits per pixel (bpp) values for different codecs
+  Map<String, double> codecBpp = {
+    "h264": 0.05, // Common for H.264
+    "h265": 0.05, // H.265 (HEVC) is more efficient
+    "vp9": 0.06, // VP9 codec
+    "av1": 0.04, // AV1 (most efficient)
+    "mpeg4": 0.15, // MPEG-4 (less efficient)
+    "mpeg2": 0.2, // MPEG-2 (even less efficient)
+  };
+
+  // Default to H.264 if codec not found
+  double bpp = codecBpp[codec.toLowerCase()] ?? 0.5;
+
+  // Calculate bitrate (bps)
+  double bitrate = width * height * frameRate * bpp;
+
+  // Calculate file size in bytes: (bitrate * duration) / 8 (to get bytes)
+  double fileSizeBytes = (bitrate * duration) / 8;
+
+  return fileSizeBytes;
+}
+
+int convertToInt(String value) {
+  return int.tryParse(value) ?? 0;
+}
+
+String formatFileSize(dynamic fileInfo, Map<Object?, Object?> format) {
+  // Convert input strings to numbers
+  int bitRate = int.tryParse(fileInfo['bit_rate'] ?? "0") ?? 0;
+  double duration = double.tryParse(format['duration'].toString()) ?? 0.0;
+  double totalBytes = 0.0;
+
+  bool estimation = false;
+  if (bitRate != 0 && duration != 0.0) {
+    totalBytes = (bitRate * duration) / 8;
+  } else if (fileInfo["codec_type"] == "video" &&
+      fileInfo["codec_name"] != null &&
+      duration != 0.0 &&
+      fileInfo["width"] != null &&
+      fileInfo["height"] != null &&
+      parseFrameRate(fileInfo["avg_frame_rate"]) != null) {
+    totalBytes = estimateVideoSize(
+        codec: fileInfo["codec_name"],
+        duration: duration,
+        frameRate: parseFrameRate(fileInfo["avg_frame_rate"])!,
+        height: fileInfo["height"],
+        width: fileInfo["width"]);
+    estimation = true;
+  } else if (fileInfo["codec_type"] == "audio" &&
+      fileInfo["codec_name"] != null &&
+      duration != 0.0 &&
+      fileInfo["sample_rate"] != null) {
+    totalBytes = estimateAudioSize(
+        codec: fileInfo["codec_name"],
+        duration: duration,
+        sampleRate: convertToInt(fileInfo["sample_rate"]));
+    estimation = true;
+  }
   // Calculate total size in bytes
-  double totalBytes = (bitRate * duration) / 8;
 
   // Convert to KB, MB, GB dynamically
+  return bytesToSizeFormate(
+      totalBytes, estimation == true ? '(estimated)' : '(approx)');
+}
+
+String bytesToSizeFormate(double totalBytes, String include) {
+  String result;
   if (totalBytes >= 1024 * 1024 * 1024) {
-    return "${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB";
+    result = "${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB";
   } else if (totalBytes >= 1024 * 1024) {
-    return "${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB";
+    result = "${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB";
   } else if (totalBytes >= 1024) {
-    return "${(totalBytes / 1024).toStringAsFixed(2)} KB";
+    result = "${(totalBytes / 1024).toStringAsFixed(2)} KB";
   } else {
-    return "${totalBytes.toStringAsFixed(2)} Bytes";
+    result = "${totalBytes.toStringAsFixed(2)} Bytes";
   }
+  return '$result $include';
 }
 
 class _VideoConverterPageState extends State<VideoConverterPage>
@@ -170,6 +279,16 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   //     print('Error deleting cache: $e');
   //   }
   // }
+
+  void _openAddCommandScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (context) => CommandFormScreen(
+                workingCommand: conversionCommand,
+              )),
+    );
+  }
 
   void showCustomFilePicker(BuildContext Parentcontext) async {
     showDialog(
@@ -255,13 +374,28 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     if (filePath.isNotEmpty && mediaInfo != null) {
       Map<dynamic, dynamic>? mp = mediaInfo.getAllProperties();
       List stream = mp!['streams'];
+      Map<Object?, Object?> format = mp['format'];
 
       final information = StringBuffer();
       int len = 0;
-      // Size ${formatFileSize(every['bit_rate'] ?? "0", every['duration'] ?? "0")}
+
+      String nameTry = format["filename"].toString();
+      List<String> formateName = nameTry.split("/");
+      double fileSize = double.tryParse(format['size'].toString()) ?? 0;
+
+      information.write('(*) name => ${formateName.last}\n');
+      information.write('(*) size => ${bytesToSizeFormate(fileSize, "")}\n');
+      information.write('\n');
+      information.write('*Streams data* \n');
+      information.write('\n');
+
       for (var every in stream) {
-        information.write(
-            ' (${every['codec_type'] == 'video' ? "*" : len++}) ${every['codec_type']} =>  Codec ${every['codec_name']} ${every['codec_type'] == 'audio' ? (', Lang ${every['tags']?['language'] ?? "??"}') : ''} \n');
+        if (every["codec_type"] == "video" || every["codec_type"] == "audio") {
+          information.write(
+              ' (${every['codec_type'] == 'video' ? "*" : len++}) ${every['codec_type']} =>  Codec ${every['codec_name']} ${every['codec_type'] == 'audio' ? (', Lang ${every['tags']?['language'] ?? "??"}') : ''} ');
+          information.write('Size ${formatFileSize(every, format)} \n');
+          information.write('\n');
+        }
       }
       setState(() {
         selectedFilePath = filePath;
@@ -364,6 +498,13 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text("OK"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close the dialog first
+                    _openAddCommandScreen(); // Open the form screen
+                  },
+                  child: const Text("Save This Command"),
                 ),
               ],
             ),
@@ -840,7 +981,10 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
   void _openAddCommandScreen() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const CommandFormScreen()),
+      MaterialPageRoute(
+          builder: (context) => CommandFormScreen(
+                workingCommand: 'hi',
+              )),
     );
   }
 
@@ -928,14 +1072,6 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openAddCommandScreen,
-        backgroundColor: Colors.blue.shade700,
-        child: const Icon(
-          Icons.add,
-          color: Colors.white,
-        ),
-      ),
     );
   }
 }
@@ -945,7 +1081,9 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
 //---------------------------------------------------------------------------------------->
 
 class CommandFormScreen extends StatefulWidget {
-  const CommandFormScreen({super.key});
+  final String workingCommand;
+
+  const CommandFormScreen({super.key, required this.workingCommand});
 
   @override
   State<CommandFormScreen> createState() => _CommandFormScreenState();
@@ -964,6 +1102,12 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
       return "This field cannot be empty.";
     }
     return null;
+  }
+
+  @override
+  void initState() {
+    _commandController.text = widget.workingCommand;
+    super.initState();
   }
 
   void _submitForm() {
@@ -1021,7 +1165,8 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
               children: [
                 _buildTextField(_titleController, "Command Title"),
                 const SizedBox(height: 20),
-                _buildTextField(_commandController, "Command", maxLines: 5),
+                _buildTextField(_commandController, "Command",
+                    maxLines: 5, enable: false),
                 const SizedBox(height: 20),
                 _buildTextField(_descriptionController, "Description",
                     maxLines: 6),
@@ -1067,7 +1212,7 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
   }
 
   Widget _buildTextField(TextEditingController controller, String label,
-      {int maxLines = 1}) {
+      {int maxLines = 1, bool enable = true}) {
     return Card(
       elevation: 5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1077,6 +1222,7 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
         child: TextFormField(
           controller: controller,
           maxLines: maxLines,
+          enabled: enable,
           decoration: InputDecoration(
             hintText: label, // Show label text in the center when idle
             hintStyle: const TextStyle(color: Colors.blue),
