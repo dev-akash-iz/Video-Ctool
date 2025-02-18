@@ -1,0 +1,9 @@
+{
+  "scripts": {
+  "build:release-major": "node build.js --major",
+  "build:release-minor": "node build.js --minor",
+  "build:release-patch": "node build.js --patch",
+  "build:release-build": "node build.js --build"
+}
+
+}

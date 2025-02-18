@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:video_ctool/api.dart';
+import 'package:video_ctool/utilitiesClass/file_detail.dart';
 
 void main() async {
   runApp(const MyApp());
@@ -22,6 +23,7 @@ const List<Widget> hint = [
       "• In your command, @f_ will automatically be replaced with the selected file's URL."),
   Text(
       "• Similarly, @s_ will be replaced with the download location on your Android device."),
+  Text("• Use, @ext_ will be replaced with the selected file same extension."),
   Text(
       "• This makes your command dynamic and adaptable to different files and locations."),
 ];
@@ -133,8 +135,35 @@ double estimateAudioSize({
   double fileSizeBytes = (bitrate * duration) / 8;
 
   // Convert to MB
-  return fileSizeBytes / (1024 * 1024);
+  return fileSizeBytes;
 }
+
+List<double> generalBppRange = [
+  0.03, // Extremely efficient (e.g., AV1 at low bitrate)
+  0.05, // Common for H.264, H.265, VP9 at lower bitrates
+  0.08, // Medium quality across various codecs
+  0.1, // Good balance of quality and efficiency
+  0.15, // Higher quality, used for MPEG-4, VP9, high-bitrate H.264
+  0.2, // Approaching lossless for some codecs
+  0.25, // Very high quality, MPEG-2, unoptimized encodes
+  0.3, // Near lossless or inefficient encoding
+  0.35, // High-bitrate MPEG-2, archival quality
+];
+
+Map<String, List<double>> codecBppRanges = {
+  "h264": [
+    0.05,
+    0.08,
+    0.1,
+    0.15,
+    0.2
+  ], // Common H.264 range from low to high quality
+  "h265": [0.04, 0.06, 0.08, 0.1, 0.12], // H.265 (HEVC) is more efficient
+  "vp9": [0.05, 0.07, 0.09, 0.12, 0.15], // VP9 range
+  "av1": [0.03, 0.04, 0.06, 0.08, 0.1], // AV1 (most efficient)
+  "mpeg4": [0.12, 0.15, 0.18, 0.2, 0.25], // MPEG-4 (older, less efficient)
+  "mpeg2": [0.18, 0.2, 0.25, 0.3, 0.35], // MPEG-2 (least efficient)
+};
 
 double estimateVideoSize({
   required int width,
@@ -142,40 +171,43 @@ double estimateVideoSize({
   required double frameRate,
   required double duration,
   required String codec,
+  required double fileSize,
 }) {
-  // Approximate bits per pixel (bpp) values for different codecs
-  Map<String, double> codecBpp = {
-    "h264": 0.05, // Common for H.264
-    "h265": 0.05, // H.265 (HEVC) is more efficient
-    "vp9": 0.06, // VP9 codec
-    "av1": 0.04, // AV1 (most efficient)
-    "mpeg4": 0.15, // MPEG-4 (less efficient)
-    "mpeg2": 0.2, // MPEG-2 (even less efficient)
-  };
-
   // Default to H.264 if codec not found
-  double bpp = codecBpp[codec.toLowerCase()] ?? 0.5;
+  List<double> bpp = codecBppRanges[codec.toLowerCase()] ?? generalBppRange;
 
-  // Calculate bitrate (bps)
-  double bitrate = width * height * frameRate * bpp;
+  double MayNearSize = 0;
 
-  // Calculate file size in bytes: (bitrate * duration) / 8 (to get bytes)
-  double fileSizeBytes = (bitrate * duration) / 8;
+  bool isactivateSkip = false;
 
-  return fileSizeBytes;
+  bpp.forEach((perBpp) {
+    if (!isactivateSkip) {
+      double bitrate = width * height * frameRate * perBpp;
+
+      double innerVideoFileSize = (bitrate * duration) / 8; // 8 bytes
+      if (innerVideoFileSize < fileSize) {
+        MayNearSize = innerVideoFileSize;
+      } else {
+        isactivateSkip = true;
+      }
+    }
+  });
+  return MayNearSize;
 }
 
 int convertToInt(String value) {
   return int.tryParse(value) ?? 0;
 }
 
-String formatFileSize(dynamic fileInfo, Map<Object?, Object?> format) {
+String formatFileSize(
+    dynamic fileInfo, Map<Object?, Object?> format, double fileSize) {
   // Convert input strings to numbers
   int bitRate = int.tryParse(fileInfo['bit_rate'] ?? "0") ?? 0;
   double duration = double.tryParse(format['duration'].toString()) ?? 0.0;
   double totalBytes = 0.0;
 
   bool estimation = false;
+
   if (bitRate != 0 && duration != 0.0) {
     totalBytes = (bitRate * duration) / 8;
   } else if (fileInfo["codec_type"] == "video" &&
@@ -189,7 +221,8 @@ String formatFileSize(dynamic fileInfo, Map<Object?, Object?> format) {
         duration: duration,
         frameRate: parseFrameRate(fileInfo["avg_frame_rate"])!,
         height: fileInfo["height"],
-        width: fileInfo["width"]);
+        width: fileInfo["width"],
+        fileSize: fileSize);
     estimation = true;
   } else if (fileInfo["codec_type"] == "audio" &&
       fileInfo["codec_name"] != null &&
@@ -201,11 +234,15 @@ String formatFileSize(dynamic fileInfo, Map<Object?, Object?> format) {
         sampleRate: convertToInt(fileInfo["sample_rate"]));
     estimation = true;
   }
+
   // Calculate total size in bytes
 
   // Convert to KB, MB, GB dynamically
   return bytesToSizeFormate(
-      totalBytes, estimation == true ? '(estimated)' : '(approx)');
+      totalBytes,
+      estimation == true
+          ? '(${totalBytes == 0.0 ? 'Unable to calculate this stream.' : 'The size is calculation based, not exact.'})'
+          : '(exact Size)');
 }
 
 String bytesToSizeFormate(double totalBytes, String include) {
@@ -217,7 +254,7 @@ String bytesToSizeFormate(double totalBytes, String include) {
   } else if (totalBytes >= 1024) {
     result = "${(totalBytes / 1024).toStringAsFixed(2)} KB";
   } else {
-    result = "${totalBytes.toStringAsFixed(2)} Bytes";
+    result = "${totalBytes.toStringAsFixed(2)} Unknown";
   }
   return '$result $include';
 }
@@ -227,6 +264,8 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   final ScrollController _scrollController = ScrollController();
   String sf = '@f_'; //selected file string
   String fsl = '@s_'; // file save location
+  final String ffmpeg = 'ffmpeg'; // ffmpeg string
+  final String ext = '@ext_'; // ffmpeg string
 
   bool isSwitched = false;
   String? selectedFilePath;
@@ -245,6 +284,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   List<FileSystemEntity> items = [];
   final TextEditingController _commandTypeInputBox = TextEditingController();
   List<dynamic> commandFromGlobal_variable = [];
+  String _fileExtension = "";
 
   void updateCommandFromApi(
       void Function(List<dynamic>)? sIdeEffectFunction) async {
@@ -382,18 +422,21 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       String nameTry = format["filename"].toString();
       List<String> formateName = nameTry.split("/");
       double fileSize = double.tryParse(format['size'].toString()) ?? 0;
-
-      information.write('(*) name => ${formateName.last}\n');
-      information.write('(*) size => ${bytesToSizeFormate(fileSize, "")}\n');
+      List<String> extension = formateName.last.split(".");
+      _fileExtension = '.${extension.last}';
+      information.write('(*) File Name => ${formateName.last}\n');
+      information
+          .write('(*) File Size => ${bytesToSizeFormate(fileSize, "")}\n');
       information.write('\n');
-      information.write('*Streams data* \n');
+      information.write('*DATA STREAMS* \n');
       information.write('\n');
 
       for (var every in stream) {
         if (every["codec_type"] == "video" || every["codec_type"] == "audio") {
           information.write(
               ' (${every['codec_type'] == 'video' ? "*" : len++}) ${every['codec_type']} =>  Codec ${every['codec_name']} ${every['codec_type'] == 'audio' ? (', Lang ${every['tags']?['language'] ?? "??"}') : ''} ');
-          information.write('Size ${formatFileSize(every, format)} \n');
+          information
+              .write('Size ${formatFileSize(every, format, fileSize)} \n');
           information.write('\n');
         }
       }
@@ -424,7 +467,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
         builder: (_) => AlertDialog(
           title: const Text("Error"),
           content: Text(status
-              ? "Please select a video file and enter a conversion command."
+              ? "Please select a file and enter a conversion command."
               : "Please provide storage permission, to store data on download"),
           actions: [
             TextButton(
@@ -462,8 +505,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     //     : '';
     // String lastWord = outputname.isNotEmpty ? outputname.last : '';
     String filterTwo = filterOne
-        .replaceFirst(sf, '"$selectedFilePath"')
-        .replaceFirst(fsl, "/storage/emulated/0/Download/");
+        .replaceAll(ffmpeg, '')
+        .replaceAll(sf, '"$selectedFilePath"')
+        .replaceAll(fsl, "/storage/emulated/0/Download/")
+        .replaceAll(ext, _fileExtension);
 
     String executableCommand = '-y $filterTwo';
     setState(() {
@@ -603,7 +648,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         selectVideoFile(false, context);
                       },
                       icon: const Icon(Icons.video_file),
-                      label: const Text("Select Video File"),
+                      label: const Text("Select File"),
                     ),
                   ),
                 ],
@@ -776,35 +821,38 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
   late String currentPath;
   Directory? currentdir;
   List<FileSystemEntity> items = [];
-
-  bool filterFileExtension = false;
+  List<FileDetails> files = [];
+  bool filterFileExtension = true;
+  bool activetedfilter = false;
+  List<FileDetails> filteredFiles = [];
+  TextEditingController searchController = TextEditingController();
   Map<String, bool> listExtension = {
     // Video extensions
     ".mp4": true,
     ".mkv": true,
     ".mov": true,
     ".avi": true,
-    // ".wmv": true,
-    // ".flv": true,
-    // ".webm": true,
-    // ".mpeg": true,
-    // ".mpg": true,
-    // ".3gp": true,
-    // ".m4v": true,
-    // ".ts": true,
+    ".wmv": true,
+    ".flv": true,
+    ".webm": true,
+    ".mpeg": true,
+    ".mpg": true,
+    ".3gp": true,
+    ".m4v": true,
+    ".ts": true,
 
-    // Audio extensions
-    // ".mp3": true,
-    // ".wav": true,
-    // ".aac": true,
-    // ".flac": true,
-    // ".ogg": true,
-    // ".wma": true,
-    // ".m4a": true,
-    // ".opus": true,
-    // ".alac": true,
-    // ".aiff": true,
-    // ".amr": true,
+    //Audio extensions
+    ".mp3": true,
+    ".wav": true,
+    ".aac": true,
+    ".flac": true,
+    ".ogg": true,
+    ".wma": true,
+    ".m4a": true,
+    ".opus": true,
+    ".alac": true,
+    ".aiff": true,
+    ".amr": true,
   };
 
   @override
@@ -822,6 +870,9 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
       currentdir = Directory(path.dirname(currentPath));
       currentPath = currentdir!.path;
       setState(() {
+        activetedfilter = false;
+        filteredFiles = [];
+        searchController.text = "";
         _loadFiles();
       });
     }
@@ -831,6 +882,13 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
     if (currentdir!.existsSync()) {
       setState(() {
         items = currentdir!.listSync();
+        files = [];
+        items.forEach((FileSystemEntity fileData) {
+          FileDetails calculatedFileInfo = FileDetails(fileData.path);
+          if (calculatedFileInfo.getExtensionIfValidElseNull() != null) {
+            files.add(calculatedFileInfo);
+          }
+        });
       });
     }
   }
@@ -838,6 +896,9 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
   void _navigateToFolder(String path) {
     currentdir = Directory(path);
     setState(() {
+      activetedfilter = false;
+      filteredFiles = [];
+      searchController.text = "";
       currentPath = path;
       _loadFiles();
     });
@@ -851,7 +912,7 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
       widget.updateVideoDetail(filePath);
       _convertVideo(filePath);
     } else {
-      _showErrorDialog("Please select a valid video file.");
+      _showErrorDialog("Please select a valid Video/Audio file.");
     }
   }
 
@@ -879,6 +940,7 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
   @override
   Widget build(BuildContext context) {
     String folderName = path.basename(currentPath);
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.blue.shade700,
@@ -909,30 +971,62 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6.0,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: searchController,
+                decoration: const InputDecoration(
+                  hintText: "Search files...",
+                  prefixIcon: Icon(Icons.search, color: Colors.blueGrey),
+                  border: InputBorder.none,
+                  contentPadding:
+                      EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+                ),
+                onChanged: (query) {
+                  setState(() {
+                    activetedfilter = query.isNotEmpty;
+                    filteredFiles = activetedfilter
+                        ? files
+                            .where((file) => file
+                                .getFileNameInsmall()!
+                                .contains(query.toLowerCase()))
+                            .toList()
+                        : [];
+                  });
+                },
+              ),
+            ),
+          ),
           Expanded(
             child: ListView.builder(
-              itemCount: items.length,
+              itemCount: activetedfilter ? filteredFiles.length : files.length,
               itemBuilder: (context, index) {
-                FileSystemEntity entity = items[index];
-                bool isDir = FileSystemEntity.isDirectorySync(entity.path);
-                String fileExtension;
-                if (filterFileExtension &&
-                    !isDir &&
-                    (fileExtension = entity.path.substring(
-                            entity.path.lastIndexOf("."), entity.path.length))
-                        .isNotEmpty &&
-                    listExtension[fileExtension] == null) {
-                  return const SizedBox.shrink();
-                }
+                List<FileDetails> data =
+                    activetedfilter ? filteredFiles : files;
+                FileDetails fileInfo = data[index];
 
                 return ListTile(
-                  leading: Icon(isDir ? Icons.folder : Icons.video_file),
-                  title: Text(entity.path.split('/').last),
+                  leading: Icon(
+                      fileInfo.isFolder() ? Icons.folder : Icons.video_file),
+                  title: Text(fileInfo.getFileName()!),
                   onTap: () {
-                    if (isDir) {
-                      _navigateToFolder(entity.path);
+                    if (fileInfo.isFolder()) {
+                      _navigateToFolder(fileInfo.getPath());
                     } else {
-                      _selectFile(entity.path);
+                      _selectFile(fileInfo.getPath());
                     }
                   },
                 );
@@ -976,16 +1070,6 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
         });
       }
     });
-  }
-
-  void _openAddCommandScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (context) => CommandFormScreen(
-                workingCommand: 'hi',
-              )),
-    );
   }
 
   void _showCommandDetail(List<dynamic> command, BuildContext context) {
