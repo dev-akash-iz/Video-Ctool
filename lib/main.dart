@@ -16,16 +16,16 @@ void main() async {
 }
 
 const List<Widget> hint = [
-  Text("• Use @f_ to represent the selected video file (e.g., 'input.mp4')."),
   Text(
-      "• Use @s_ to represent the output folder where the converted file will be saved (e.g., '/0/download/')."),
+      "• In your command, use the key @f_ to automatically replace it with the selected file's URL. \nexample:\n     (@f_ => '/0/download/input.mp4')\n"),
   Text(
-      "• In your command, @f_ will automatically be replaced with the selected file's URL."),
+      "• For the output location, use the key @s_ to replace it with the download location '/0/download/' on your Android device. \nexample:\n     (@s_output.mp4 => '/0/download/output.mp4')\n"),
   Text(
-      "• Similarly, @s_ will be replaced with the download location on your Android device."),
-  Text("• Use, @ext_ will be replaced with the selected file same extension."),
+      "• Use the key @ext_ to replace it with the selected file’s extension. This helps in writing generic commands. \nexample:\n     (@s_output@ext_ => '/0/download/output.mp4')\n"),
   Text(
-      "• This makes your command dynamic and adaptable to different files and locations."),
+      "• You can use @s_ to access additional files from the download folder, which can be useful for adding subtitles or audio to a video file.\n"),
+  Text(
+      "• To keep this process running in the background, go to **Settings > Battery > Battery Optimization**, find this app, and select **Don't optimize**. This prevents the system from stopping the process when the app is not in use."),
 ];
 
 class MyApp extends StatelessWidget {
@@ -324,8 +324,9 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (context) => CommandFormScreen(
+          builder: (childcontext) => CommandFormScreen(
                 workingCommand: conversionCommand,
+                parentContext: context,
               )),
     );
   }
@@ -362,17 +363,12 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     // Perform cleanup
     _scrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
-    print('Widget disposed.');
     super.dispose();
   }
 
   Future<int> getVideoDuration(String filePath) async {
     final session = await FFprobeKit.getMediaInformation(filePath);
     final mediaInfo = session.getMediaInformation();
-    Map<dynamic, dynamic>? mp = mediaInfo?.getAllProperties();
-    print(mp);
-    //Map<dynamic, dynamic>? x = mediaInfo?.getAllProperties();
-    //print(x);
     if (mediaInfo != null) {
       final durationStr =
           mediaInfo.getDuration(); // Duration in seconds as a string
@@ -538,18 +534,18 @@ class _VideoConverterPageState extends State<VideoConverterPage>
             context: context,
             builder: (_) => AlertDialog(
               title: const Text("Success"),
-              content: const Text("Video converted successfully! Saved"),
+              content: const Text("File converted successfully! Saved"),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("OK"),
-                ),
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context); // Close the dialog first
                     _openAddCommandScreen(); // Open the form screen
                   },
                   child: const Text("Save This Command"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK"),
                 ),
               ],
             ),
@@ -562,7 +558,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
               context: context,
               builder: (_) => AlertDialog(
                     title: const Text("Cancelled"),
-                    content: const Text("Video conversion was cancelled."),
+                    content: const Text("File conversion was cancelled."),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
@@ -908,7 +904,6 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
     String fileExtension =
         filePath.substring(filePath.lastIndexOf("."), filePath.length);
     if (listExtension[fileExtension] == true) {
-      print(filePath);
       widget.updateVideoDetail(filePath);
       _convertVideo(filePath);
     } else {
@@ -917,7 +912,7 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
   }
 
   void _convertVideo(String filePath) {
-    print("Converting video: $filePath");
+    //print("Converting video: $filePath");
     widget.closeALL();
   }
 
@@ -1166,8 +1161,10 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
 
 class CommandFormScreen extends StatefulWidget {
   final String workingCommand;
+  final BuildContext parentContext;
 
-  const CommandFormScreen({super.key, required this.workingCommand});
+  const CommandFormScreen(
+      {super.key, required this.workingCommand, required this.parentContext});
 
   @override
   State<CommandFormScreen> createState() => _CommandFormScreenState();
@@ -1205,12 +1202,22 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
               description: _descriptionController.text,
               title: _titleController.text)
           .then((data) {
-        print(data);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("Command saved!")));
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text("Command saved!")));
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(widget.parentContext)
+              .showSnackBar(const SnackBar(content: Text("Command saved!")));
+        }
       }).catchError((error) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: $error")));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("SomeThing went wrong")));
+        } else {
+          ScaffoldMessenger.of(widget.parentContext).showSnackBar(
+              const SnackBar(content: Text("SomeThing went wrong")));
+        }
       }).whenComplete(() {
         setState(() {
           _isLoading = false;
