@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:video_ctool/api.dart';
+import 'package:video_ctool/utilitiesClass/actions_builder.dart';
 import 'package:video_ctool/utilitiesClass/file_detail.dart';
 
 void main() async {
@@ -111,6 +112,11 @@ double? parseFrameRate(String? avgFrameRate) {
   }
 }
 
+String capitalizeFirst(String text) {
+  if (text.isEmpty) return "";
+  return text[0].toUpperCase() + text.substring(1).toLowerCase();
+}
+
 double estimateAudioSize({
   required String codec,
   required int sampleRate,
@@ -180,7 +186,7 @@ double estimateVideoSize({
 
   bool isactivateSkip = false;
 
-  bpp.forEach((perBpp) {
+  for (var perBpp in bpp) {
     if (!isactivateSkip) {
       double bitrate = width * height * frameRate * perBpp;
 
@@ -191,7 +197,7 @@ double estimateVideoSize({
         isactivateSkip = true;
       }
     }
-  });
+  }
   return MayNearSize;
 }
 
@@ -273,7 +279,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   double progress = 0.0;
   bool isConverting = false;
   String? fullCommand;
-  String logOutput = '';
+  StringBuffer logOutput = StringBuffer();
   String SelectedFileInfo = '';
   bool _isError = false;
   String manualPath = '';
@@ -285,6 +291,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   final TextEditingController _commandTypeInputBox = TextEditingController();
   List<dynamic> commandFromGlobal_variable = [];
   String _fileExtension = "";
+  List<ActionBuilder>? actions = [];
+
+  static const int maxLogs = 500;
+  int logCount = 0;
 
   void updateCommandFromApi(
       void Function(List<dynamic>)? sIdeEffectFunction) async {
@@ -297,6 +307,14 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   void initState() {
     super.initState();
     updateCommandFromApi(null);
+    actions = [
+      ActionBuilder("Select File", Icons.music_video, () {
+        showCustomFilePicker(context);
+      }),
+      ActionBuilder("Upload Command", Icons.file_upload_sharp, () {
+        _openAddCommandScreen(isLocalSave: true);
+      })
+    ];
     //_loadSettings();
   }
 
@@ -320,42 +338,45 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   //   }
   // }
 
-  void _openAddCommandScreen() {
+  void _openAddCommandScreen({bool isLocalSave = false}) {
     Navigator.push(
       context,
       MaterialPageRoute(
           builder: (childcontext) => CommandFormScreen(
-                workingCommand: conversionCommand,
-                parentContext: context,
-              )),
+              workingCommand: conversionCommand,
+              parentContext: context,
+              isLocalSave: isLocalSave)),
     );
   }
 
   void showCustomFilePicker(BuildContext Parentcontext) async {
-    showDialog(
-      context: Parentcontext,
-      barrierDismissible: false, // Prevent accidental closing
-      builder: (contextPopup) {
-        return CustomFilePicker(
-            parentPath, setState, contextPopup, getVideoInfo);
-      },
-    );
-  }
-
-  void showCommandGlobalView(BuildContext context) async {
     var status = await requestStoragePermission();
     if (status) {
       showDialog(
-        context: context,
+        context: Parentcontext,
         barrierDismissible: false, // Prevent accidental closing
-        builder: (context) {
-          return CommandsGlobal(
-              commands: commandFromGlobal_variable,
-              loadListFun: updateCommandFromApi,
-              inputBoxController: _updateCommandInput);
+        builder: (contextPopup) {
+          return CustomFilePicker(
+              parentPath, setState, contextPopup, getVideoInfo);
         },
       );
     }
+  }
+
+  void showCommandGlobalView(BuildContext context) async {
+    // var status = await requestStoragePermission();
+    // if (status) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent accidental closing
+      builder: (context) {
+        return CommandsGlobal(
+            commands: commandFromGlobal_variable,
+            loadListFun: updateCommandFromApi,
+            inputBoxController: _updateCommandInput);
+      },
+    );
+    // }
   }
 
   @override
@@ -384,8 +405,8 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     String? io;
     if (isByfilePicker) {
       setState(() {
-        logOutput =
-            "File Moving to cache , please WAIT it may take a while based on size of video";
+        logOutput.write(
+            "File Moving to cache , please WAIT it may take a while based on size of video");
       });
       FilePickerResult? result;
       try {
@@ -439,14 +460,15 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       setState(() {
         selectedFilePath = filePath;
         _isError = false;
-        logOutput = information.toString();
+        logOutput.clear();
+        logOutput.write(information.toString());
         SelectedFileInfo = information.toString();
       });
     } else {
       setState(() {
         _isError = true;
-        logOutput =
-            "Issue with getting file info\n Renaming file without special character may resolve this issue";
+        logOutput.write(
+            "Issue with getting file info\n Renaming file without special character may resolve this issue");
       });
     }
   }
@@ -454,7 +476,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   void startConversion() async {
     setState(() {
       _isError = false;
-      logOutput = "";
+      logOutput.clear();
     });
     var status = await requestStoragePermission();
     if (selectedFilePath == null || conversionCommand.isEmpty || !status) {
@@ -541,7 +563,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                     Navigator.pop(context); // Close the dialog first
                     _openAddCommandScreen(); // Open the form screen
                   },
-                  child: const Text("Save This Command"),
+                  child: const Text("Upload This Command"),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
@@ -587,7 +609,14 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       },
       (log) {
         setState(() {
-          logOutput += '${log.getMessage()} \n';
+          logCount++;
+
+          logOutput.write('${log.getMessage()}\n\n'); // Append efficiently
+
+          if (logCount >= maxLogs) {
+            logOutput.clear();
+            logCount = 0; // Reset log counter
+          }
           _scrollToBottom();
         });
       }, // Logs the FFmpeg process
@@ -633,18 +662,14 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                       onPressed: () {
                         showCommandGlobalView(context);
                       },
-                      icon: const Icon(Icons.video_file),
+                      icon: const Icon(Icons.notes),
                       label: const Text("Command Center"),
                     ),
                   ),
                   const SizedBox(width: 8), // Adds spacing between buttons
                   Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        selectVideoFile(false, context);
-                      },
-                      icon: const Icon(Icons.video_file),
-                      label: const Text("Select File"),
+                    child: SwipeButton(
+                      actions: actions,
                     ),
                   ),
                 ],
@@ -702,10 +727,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         child: ElevatedButton.icon(
                           onPressed:
                               isConverting ? cancelConversion : startConversion,
-                          icon: const Icon(Icons.video_file),
-                          label: Text(isConverting
-                              ? "Cancel Conversion"
-                              : "Start Conversion"),
+                          icon: Icon(isConverting
+                              ? Icons.close_rounded
+                              : Icons.play_circle),
+                          label: Text(isConverting ? "Cancel" : "Start"),
                         ),
                       ),
                       const SizedBox(
@@ -773,7 +798,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         controller: _scrollController,
                         scrollDirection: Axis.vertical,
                         child: SelectableText(
-                          isSwitched ? SelectedFileInfo : logOutput,
+                          isSwitched ? SelectedFileInfo : logOutput.toString(),
                           style: TextStyle(
                             fontSize: 14,
                             color: _isError
@@ -879,12 +904,12 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
       setState(() {
         items = currentdir!.listSync();
         files = [];
-        items.forEach((FileSystemEntity fileData) {
+        for (var fileData in items) {
           FileDetails calculatedFileInfo = FileDetails(fileData.path);
           if (calculatedFileInfo.getExtensionIfValidElseNull() != null) {
             files.add(calculatedFileInfo);
           }
-        });
+        }
       });
     }
   }
@@ -973,7 +998,7 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12.0),
-                boxShadow: [
+                boxShadow: const [
                   BoxShadow(
                     color: Colors.black26,
                     blurRadius: 6.0,
@@ -1053,7 +1078,7 @@ class CommandsGlobal extends StatefulWidget {
 
 class _CommandsGlobalState extends State<CommandsGlobal> {
   List<dynamic> commands = [];
-
+  bool isLoading = true;
   @override
   void initState() {
     super.initState();
@@ -1061,6 +1086,7 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
     widget.loadListFun!((apiResult) {
       if (mounted) {
         setState(() {
+          isLoading = false;
           commands = apiResult;
         });
       }
@@ -1083,75 +1109,92 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text(
-          "Command List",
-          style: TextStyle(
-              fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white),
-        ),
-        backgroundColor: Colors.blue.shade700,
-        centerTitle: true,
-        elevation: 2,
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close,
-                color: Colors.white), // Replace with your desired icon
-            onPressed: () {
-              Navigator.pop(context);
-            },
+        backgroundColor: Colors.grey[50],
+        appBar: AppBar(
+          title: const Text(
+            "Command List",
+            style: TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white),
           ),
-        ],
-      ),
-      body: commands.isEmpty
-          ? const Center(
-              child: Text(
-                "No commands available.",
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16.0),
-              itemCount: commands.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final command = commands[index];
-                return Card(
-                  elevation: 4,
-                  shadowColor: Colors.blue.shade100,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    title: Text(
-                      command[0] ?? "No Title available.",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        (command[2] == null || (command[2] as String) == '')
-                            ? "No description available."
-                            : command[2],
-                        style: const TextStyle(
-                            fontSize: 14, color: Colors.black87),
-                      ),
-                    ),
-                    trailing:
-                        const Icon(Icons.chevron_right, color: Colors.blue),
-                    onTap: () => _showCommandDetail(command, context),
-                  ),
-                );
+          backgroundColor: Colors.blue.shade700,
+          centerTitle: true,
+          elevation: 2,
+          automaticallyImplyLeading: false,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close,
+                  color: Colors.white), // Replace with your desired icon
+              onPressed: () {
+                Navigator.pop(context);
               },
             ),
-    );
+          ],
+        ),
+        body: Stack(children: [
+          commands.isEmpty
+              ? const Center(
+                  child: Text(
+                    "No commands available.",
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                )
+              : ListView.separated(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  itemCount: commands.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final command = commands[index];
+
+                    return Card(
+                      elevation: 4,
+                      shadowColor: Colors.blue.withOpacity(0.15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 16),
+                        leading: const Icon(
+                          Icons.description, // Change icon as needed
+                          color: Color(0xFF1565C0),
+                          size: 28,
+                        ),
+                        title: Text(
+                          capitalizeFirst(command[0] ?? "No Title Available"),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1565C0),
+                            fontFamily: 'Roboto',
+                            letterSpacing: 0.3,
+                            height: 1.4,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF1565C0),
+                          size: 24,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        onTap: () => _showCommandDetail(command, context),
+                      ),
+                    );
+                  },
+                ),
+          if (isLoading) // 🔹 Show bottom loader only when loading
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: LinearProgressIndicator(
+                backgroundColor: Colors.grey[300],
+                color: Colors.blue.shade700,
+                minHeight: 4,
+              ),
+            ),
+        ]));
   }
 }
 
@@ -1162,9 +1205,13 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
 class CommandFormScreen extends StatefulWidget {
   final String workingCommand;
   final BuildContext parentContext;
+  final bool isLocalSave;
 
   const CommandFormScreen(
-      {super.key, required this.workingCommand, required this.parentContext});
+      {super.key,
+      required this.workingCommand,
+      required this.parentContext,
+      required this.isLocalSave});
 
   @override
   State<CommandFormScreen> createState() => _CommandFormScreenState();
@@ -1254,10 +1301,18 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text(
+                  "Share a helpful FFmpeg command to assist others in their workflows.",
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
                 _buildTextField(_titleController, "Command Title"),
                 const SizedBox(height: 20),
                 _buildTextField(_commandController, "Command",
-                    maxLines: 5, enable: false),
+                    maxLines: 5, enable: widget.isLocalSave),
                 const SizedBox(height: 20),
                 _buildTextField(_descriptionController, "Description",
                     maxLines: 6),
@@ -1422,7 +1477,28 @@ class CommandDetailScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 20),
-
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: () => _copyCommand(context),
+                  icon: const Icon(Icons.copy, color: Colors.white),
+                  label: const Text(
+                    "Use this Command",
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 30),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
+                    elevation: 6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 30),
               // Command Description
               Card(
                 elevation: 5,
@@ -1455,30 +1531,30 @@ class CommandDetailScreen extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 30),
+              // const SizedBox(height: 30),
 
-              // Copy Button
-              Center(
-                child: ElevatedButton.icon(
-                  onPressed: () => _copyCommand(context),
-                  icon: const Icon(Icons.copy, color: Colors.white),
-                  label: const Text(
-                    "Use this Command",
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12, horizontal: 30),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                    elevation: 6,
-                  ),
-                ),
-              ),
+              // // Copy Button
+              // Center(
+              //   child: ElevatedButton.icon(
+              //     onPressed: () => _copyCommand(context),
+              //     icon: const Icon(Icons.copy, color: Colors.white),
+              //     label: const Text(
+              //       "Use this Command",
+              //       style: TextStyle(
+              //           fontSize: 16,
+              //           fontWeight: FontWeight.w600,
+              //           color: Colors.white),
+              //     ),
+              //     style: ElevatedButton.styleFrom(
+              //       backgroundColor: Colors.blue.shade700,
+              //       padding: const EdgeInsets.symmetric(
+              //           vertical: 12, horizontal: 30),
+              //       shape: RoundedRectangleBorder(
+              //           borderRadius: BorderRadius.circular(30)),
+              //       elevation: 6,
+              //     ),
+              //   ),
+              // ),
             ],
           ),
         ),
@@ -1551,6 +1627,68 @@ class _ExpandableContainerState extends State<ExpandableContainer>
               : const SizedBox(), // Takes no space when collapsed
         ),
       ],
+    );
+  }
+}
+
+class SwipeButton extends StatefulWidget {
+  final List<ActionBuilder>? actions;
+
+  const SwipeButton({super.key, required this.actions});
+
+  @override
+  _SwipeButtonState createState() => _SwipeButtonState();
+}
+
+class _SwipeButtonState extends State<SwipeButton> {
+  bool isSelectFile = true; // Tracks button state
+  int currentButtonIndex = 0;
+  int _actionLength = 0;
+  bool _canSwipe = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _actionLength = (widget.actions?.length ?? 0);
+  }
+
+  void _resetSwipe(DragEndDetails details) {
+    setState(() {
+      _canSwipe = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onVerticalDragEnd:
+          _resetSwipe, // reset on lift so again swipe to change another
+      onVerticalDragUpdate: (details) {
+        if (_canSwipe &&
+            details.primaryDelta! < -6 &&
+            (currentButtonIndex + 1) < _actionLength) {
+          // logic is if it is swiped up and if
+
+          setState(() {
+            _canSwipe = false;
+            ++currentButtonIndex;
+          });
+        } else if (_canSwipe &&
+            details.primaryDelta! > 6 &&
+            (currentButtonIndex - 1) > -1) {
+          setState(() {
+            _canSwipe = false;
+            --currentButtonIndex;
+          });
+        }
+      },
+      child: ElevatedButton.icon(
+        onPressed: () {
+          widget.actions![currentButtonIndex].getOnSelectFun().call();
+        },
+        icon: Icon(widget.actions![currentButtonIndex].getIcon()),
+        label: Text(widget.actions![currentButtonIndex].getName()),
+      ),
     );
   }
 }
