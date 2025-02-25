@@ -27,7 +27,6 @@ if (!versionMatch) {
 
 const newVersion = buildGenerator(versionMatch, args);
 
-debugger;
 // Replace the version in pubspec.yaml
 pubspecContent = pubspecContent.replace(versionMatch[0], newVersion);
 fs.writeFileSync(pubspecPath, pubspecContent, "utf8");

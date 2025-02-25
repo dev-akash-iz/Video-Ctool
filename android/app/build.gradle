@@ -11,6 +11,12 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+ repositories {
+        flatDir {
+            dirs 'libs'  // Add the path to the 'libs' directory
+        }
+    }
+    
 android {
     namespace = "com.devakash.ctool"
     compileSdk = flutter.compileSdkVersion
@@ -56,4 +62,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.5.0'
+    implementation(name: 'ffmpeg-kit', ext: 'aar')
 }

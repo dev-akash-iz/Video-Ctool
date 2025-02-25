@@ -1,15 +1,16 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/ffprobe_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:video_ctool/api.dart';
+import 'package:video_ctool/ffmpeg_wrappers/ffmpeg_kit.dart';
+import 'package:video_ctool/ffmpeg_wrappers/ffprobe_kit.dart';
+import 'package:video_ctool/ffmpeg_wrappers/return_code.dart';
 import 'package:video_ctool/utilitiesClass/actions_builder.dart';
+import 'package:video_ctool/utilitiesClass/common_functions.dart';
 import 'package:video_ctool/utilitiesClass/file_detail.dart';
 
 void main() async {
@@ -17,15 +18,15 @@ void main() async {
 }
 
 const List<Widget> hint = [
-  Text(
+  SelectableText(
       "• In your command, use the key @f_ to automatically replace it with the selected file's URL. \nexample:\n     (@f_ => '/0/download/input.mp4')\n"),
-  Text(
+  SelectableText(
       "• For the output location, use the key @s_ to replace it with the download location '/0/download/' on your Android device. \nexample:\n     (@s_output.mp4 => '/0/download/output.mp4')\n"),
-  Text(
+  SelectableText(
       "• Use the key @ext_ to replace it with the selected file’s extension. This helps in writing generic commands. \nexample:\n     (@s_output@ext_ => '/0/download/output.mp4')\n"),
-  Text(
+  SelectableText(
       "• You can use @s_ to access additional files from the download folder, which can be useful for adding subtitles or audio to a video file.\n"),
-  Text(
+  SelectableText(
       "• To keep this process running in the background, go to **Settings > Battery > Battery Optimization**, find this app, and select **Don't optimize**. This prevents the system from stopping the process when the app is not in use."),
 ];
 
@@ -93,6 +94,40 @@ Future<bool> requestStoragePermission() async {
     // For non-Android platforms
     print("Storage permission not required on this platform.");
     return true;
+  }
+}
+
+const String space = '   ';
+// StringBuffer writer, dynamic mapOfInformation
+void streamsInformationTemplateGenerate(
+    {required StringBuffer stringBuffer,
+    required dynamic mapOfInformation,
+    required List<int> countRefrence,
+    required Map<Object?, Object?> formateInfo,
+    required double totalSize}) {
+  switch (mapOfInformation["codec_type"]) {
+    case "video":
+      stringBuffer.write('VIDEO:\n');
+      stringBuffer.write('${space}Codec : ${mapOfInformation['codec_name']}\n');
+      stringBuffer.write(
+          '${space}Resolution : ${mapOfInformation['width']} x ${mapOfInformation['height']}\n');
+      stringBuffer.write(
+          '${space}Size : ${formatFileSize(mapOfInformation, formateInfo, totalSize)} \n');
+      break;
+    case "audio":
+      if (countRefrence[0] == 0) {
+        stringBuffer.write('AUDIO TRACKS:\n');
+      }
+      stringBuffer.write(' (${countRefrence[0]++})\n');
+      stringBuffer.write('${space}Codec : ${mapOfInformation['codec_name']}\n');
+      stringBuffer.write(
+          '${space}Lang : ${getLanguageName(mapOfInformation['tags']?['language'])}\n');
+
+      stringBuffer.write(
+          '${space}Size : ${formatFileSize(mapOfInformation, formateInfo, totalSize)} \n');
+      break;
+
+    default:
   }
 }
 
@@ -272,7 +307,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   String fsl = '@s_'; // file save location
   final String ffmpeg = 'ffmpeg'; // ffmpeg string
   final String ext = '@ext_'; // ffmpeg string
-
+  bool _ConversionSessionOngoing = false;
   bool isSwitched = false;
   String? selectedFilePath;
   String conversionCommand = '';
@@ -292,6 +327,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   List<dynamic> commandFromGlobal_variable = [];
   String _fileExtension = "";
   List<ActionBuilder>? actions = [];
+  bool _enableoverrideFile = false;
 
   static const int maxLogs = 500;
   int logCount = 0;
@@ -325,6 +361,9 @@ class _VideoConverterPageState extends State<VideoConverterPage>
 
   // Call this method whenever new content is added (e.g., in your setState)
   void _scrollToBottom() {
+    if (isSwitched) {
+      return;
+    }
     _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
   }
 
@@ -434,34 +473,51 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       Map<Object?, Object?> format = mp['format'];
 
       final information = StringBuffer();
-      int len = 0;
+      List<int> audioSubtitleCount = [0, 0];
 
       String nameTry = format["filename"].toString();
       List<String> formateName = nameTry.split("/");
       double fileSize = double.tryParse(format['size'].toString()) ?? 0;
       List<String> extension = formateName.last.split(".");
       _fileExtension = '.${extension.last}';
-      information.write('(*) File Name => ${formateName.last}\n');
+      information.write('File Name: ${formateName.last}\n');
+      information.write('File Size: ${bytesToSizeFormate(fileSize, "")}\n');
       information
-          .write('(*) File Size => ${bytesToSizeFormate(fileSize, "")}\n');
+          .write('File Duration: ${formatDuration(format["duration"])}\n');
+
       information.write('\n');
-      information.write('*DATA STREAMS* \n');
+      information.write('[ DATA STREAMS ]\n');
       information.write('\n');
 
       for (var every in stream) {
-        if (every["codec_type"] == "video" || every["codec_type"] == "audio") {
-          information.write(
-              ' (${every['codec_type'] == 'video' ? "*" : len++}) ${every['codec_type']} =>  Codec ${every['codec_name']} ${every['codec_type'] == 'audio' ? (', Lang ${every['tags']?['language'] ?? "??"}') : ''} ');
-          information
-              .write('Size ${formatFileSize(every, format, fileSize)} \n');
-          information.write('\n');
-        }
+        streamsInformationTemplateGenerate(
+            stringBuffer: information,
+            formateInfo: format,
+            mapOfInformation: every,
+            countRefrence: audioSubtitleCount,
+            totalSize: fileSize);
+
+        // if (every["codec_type"] == "video" || every["codec_type"] == "audio") {
+        //   //what type this tells is this video , audio , subtitle
+        //   information.write(
+        //       ' (${every['codec_type'] == 'video' ? "*" : len++}) ${every['codec_type'].toUpperCase()}\n\n');
+        //   //codec
+        //   information.write('         Codec : ${every['codec_name']}\n');
+        //   information.write('         Codec : ${every['codec_name']}\n');
+        //   information.write(
+        //       '${every['codec_type'] == 'audio' ? (', Lang ${every['tags']?['language'] ?? "??"}') : ''} ');
+        //   information
+        //       .write('Size ${formatFileSize(every, format, fileSize)} \n');
+
+        // }
+        information.write('\n');
       }
       setState(() {
         selectedFilePath = filePath;
+        _enableoverrideFile = false;
         _isError = false;
         logOutput.clear();
-        logOutput.write(information.toString());
+        // logOutput.write(information.toString());
         SelectedFileInfo = information.toString();
       });
     } else {
@@ -474,10 +530,14 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   }
 
   void startConversion() async {
+    if (_ConversionSessionOngoing) return;
+    _ConversionSessionOngoing = true;
+
     setState(() {
       _isError = false;
       logOutput.clear();
     });
+
     var status = await requestStoragePermission();
     if (selectedFilePath == null || conversionCommand.isEmpty || !status) {
       showDialog(
@@ -495,6 +555,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
           ],
         ),
       );
+      _ConversionSessionOngoing = false;
       return;
     }
 
@@ -514,6 +575,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
           ],
         ),
       );
+      _ConversionSessionOngoing = false;
       return;
     }
     String filterOne = conversionCommand.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -522,13 +584,44 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     //     ? outputname.sublist(0, outputname.length - 1).join(" ")
     //     : '';
     // String lastWord = outputname.isNotEmpty ? outputname.last : '';
+    bool isUserAlreadyNotAllowedOverride = filterOne.contains("-n");
+    bool isUserAlreadyAllowedOverride = filterOne.contains("-y");
+
     String filterTwo = filterOne
         .replaceAll(ffmpeg, '')
         .replaceAll(sf, '"$selectedFilePath"')
         .replaceAll(fsl, "/storage/emulated/0/Download/")
-        .replaceAll(ext, _fileExtension);
+        .replaceAll(ext, _fileExtension)
+        .replaceAll("-n", "")
+        .replaceAll("-y", "");
 
-    String executableCommand = '-y $filterTwo';
+    String executableCommand = filterTwo;
+
+    if (isUserAlreadyAllowedOverride && isUserAlreadyNotAllowedOverride) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Error"),
+          content: const Text(
+              "Conflicting flags: Both '-y' (overwrite) and '-n' (no overwrite) are present. Please provide only one."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      _ConversionSessionOngoing = false;
+      return;
+    }
+
+    if (!isUserAlreadyAllowedOverride &&
+        _enableoverrideFile &&
+        !isUserAlreadyNotAllowedOverride) {
+      executableCommand = '-y $executableCommand';
+    }
+
     setState(() {
       fullCommand = executableCommand;
       isConverting = true;
@@ -538,96 +631,135 @@ class _VideoConverterPageState extends State<VideoConverterPage>
 
     // Fetch total duration using FFprobe
     int totalDuration = await getVideoDuration(selectedFilePath!);
+    String everyLoopLog = "";
+    FFmpegKit.cancel().then((session) async {
+      // Start the FFmpeg session
+      FFmpegKit.executeAsync(
+        executableCommand,
+        (session) async {
+          final returnCode = await session.getReturnCode();
 
-    // Start the FFmpeg session
-    await FFmpegKit.executeAsync(
-      executableCommand,
-      (session) async {
-        final returnCode = await session.getReturnCode();
-        setState(() {
-          isConverting = false;
-        });
-
-        if (ReturnCode.isSuccess(returnCode)) {
-          setState(() {
-            _isError = false;
-          });
-          showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text("Success"),
-              content: const Text("File converted successfully! Saved"),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context); // Close the dialog first
-                    _openAddCommandScreen(); // Open the form screen
-                  },
-                  child: const Text("Upload This Command"),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("OK"),
-                ),
-              ],
-            ),
-          );
-        } else if (ReturnCode.isCancel(returnCode)) {
-          setState(() {
-            _isError = true;
-          });
-          showDialog(
+          if (ReturnCode.isSuccess(returnCode)) {
+            setState(() {
+              _enableoverrideFile = false;
+              _isError = false;
+              isConverting = false;
+              _scrollToBottom();
+            });
+            showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                    title: const Text("Cancelled"),
-                    content: const Text("File conversion was cancelled."),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("OK"),
-                      ),
-                    ],
-                  ));
-        } else {
-          setState(() {
-            _isError = true;
-          });
-          showDialog(
+                title: const Text("Success"),
+                content: const Text("File converted successfully! Saved"),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context); // Close the dialog first
+                      _openAddCommandScreen(); // Open the form screen
+                    },
+                    child: const Text("Upload This Command"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("OK"),
+                  ),
+                ],
+              ),
+            );
+          } else if (ReturnCode.isCancel(returnCode)) {
+            setState(() {
+              isConverting = false;
+              _isError = true;
+              _scrollToBottom();
+            });
+            showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                      title: const Text("Cancelled"),
+                      content: const Text("File conversion was cancelled."),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("OK"),
+                        ),
+                      ],
+                    ));
+          } else if (everyLoopLog.contains("already exists") ||
+              everyLoopLog.contains("Not overwriting - exiting")) {
+            setState(() {
+              isConverting = false;
+              _isError = true;
+              _scrollToBottom();
+            });
+            showDialog(
               context: context,
-              builder: (_) => AlertDialog(
-                    title: const Text("Error"),
-                    content: const Text(
-                        "Conversion failed. Please check your command."),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("OK"),
-                      ),
-                    ],
-                  ));
-        }
-      },
-      (log) {
-        setState(() {
-          logCount++;
-
-          logOutput.write('${log.getMessage()}\n\n'); // Append efficiently
-
-          if (logCount >= maxLogs) {
-            logOutput.clear();
-            logCount = 0; // Reset log counter
+              builder: (thisContext) => AlertDialog(
+                title: const Text("File Exists"),
+                content: const Text(
+                    "This file already exists. Enable overwrite? Press 'Start' again to begin conversion."),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _enableoverrideFile = true; // Enable overwrite
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: const Text("Overwrite"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context), // Cancel
+                    child: const Text("Cancel"),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            setState(() {
+              isConverting = false;
+              _isError = true;
+              _scrollToBottom();
+            });
+            showDialog(
+                context: context,
+                builder: (thisContext) => AlertDialog(
+                      title: const Text("Error"),
+                      content: const Text(
+                          "Conversion failed. Please check your command."),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(thisContext),
+                          child: const Text("OK"),
+                        ),
+                      ],
+                    ));
           }
-          _scrollToBottom();
-        });
-      }, // Logs the FFmpeg process
-      (statistics) {
-        setState(() {
-          if (totalDuration > 0) {
-            progress = (statistics.getTime() / totalDuration) * 100;
-          }
-        });
-      },
-    );
+        },
+        (log) {
+          setState(() {
+            if (logCount >= maxLogs) {
+              logOutput.clear();
+              logCount = 0;
+            }
+
+            everyLoopLog = log.getMessage();
+            logOutput.write('${log.getMessage()}\n\n');
+            logCount++;
+
+            _scrollToBottom();
+          });
+        }, // Logs the FFmpeg process
+        (statistics) {
+          setState(() {
+            if (totalDuration > 0) {
+              progress = (statistics.getTime() / totalDuration) * 100;
+            }
+          });
+        },
+      ).whenComplete(() {
+        _ConversionSessionOngoing = false;
+      });
+    });
   }
 
   void cancelConversion() {
@@ -696,10 +828,41 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                 controller: _commandTypeInputBox,
                 onChanged: (value) => conversionCommand = value,
                 maxLines: 5,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: "Enter FFmpeg command...",
+                style: const TextStyle(
+                  fontFamily: "monospace", // Better for coding
+                  fontWeight: FontWeight.w500, // Medium weight for clarity
+                  height: 1.8, // Balanced line height for better spacing
+                  fontSize: 15, // Standard size for command input
+                  letterSpacing: 0.5, // Slight spacing for readability
+                  color: Colors.black87, // Dark text for white background
                 ),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white, // White background
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(5), // Slightly rounded corners
+                    borderSide: const BorderSide(
+                        color: Colors.blueGrey), // Subtle contrast
+                  ),
+                  enabledBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(
+                        color: Colors.blueGrey), // Consistent styling
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                        color: Colors.blue.shade400,
+                        width: 2), // Emphasize focus
+                  ),
+                  hintText: "Enter FFmpeg command...",
+                  hintStyle: const TextStyle(
+                    color: Colors.grey, // Subtle hint text
+                    fontFamily: "JetBrainsMono",
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                ),
+                cursorColor: Colors.blue, // Blue cursor for visibility
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,7 +933,9 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                   color: _isError ? Colors.red[50] : Colors.blue[50],
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                      color: _isError ? Colors.red : Colors.blue.shade700,
+                      color: _isError
+                          ? const Color(0xFFD32F2F)
+                          : Colors.blue.shade700,
                       width: 1),
                 ),
                 child: Column(
@@ -792,7 +957,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                     const SizedBox(height: 8),
                     // Limit the height of the scrollable view
                     SizedBox(
-                      height: 200,
+                      height: 220,
                       // Adjust the height as needed
                       child: SingleChildScrollView(
                         controller: _scrollController,
@@ -800,7 +965,13 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                         child: SelectableText(
                           isSwitched ? SelectedFileInfo : logOutput.toString(),
                           style: TextStyle(
-                            fontSize: 14,
+                            fontFamily: "monospace",
+                            fontWeight: FontWeight
+                                .w500, // Medium weight for balanced emphasis
+                            height:
+                                1.4, // Slightly more spacing for multi-line readability
+                            fontSize: 14, // Optimal for log display
+                            letterSpacing: 0.5,
                             color: _isError
                                 ? Colors.red.shade900
                                 : Colors.blue.shade900,
@@ -1164,12 +1335,12 @@ class _CommandsGlobalState extends State<CommandsGlobal> {
                         title: Text(
                           capitalizeFirst(command[0] ?? "No Title Available"),
                           style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: Color(0xFF1565C0),
-                            fontFamily: 'Roboto',
+                            fontFamily: 'Menlo',
                             letterSpacing: 0.3,
-                            height: 1.4,
+                            height: 1.5,
                           ),
                         ),
                         trailing: const Icon(
@@ -1391,6 +1562,7 @@ class _CommandFormScreenState extends State<CommandFormScreen> {
 
 class CommandDetailScreen extends StatelessWidget {
   final List<dynamic> command;
+  static const String spliter = ";";
   final Function(String) inputBoxController;
   final BuildContext parentContext;
   const CommandDetailScreen(
@@ -1399,10 +1571,10 @@ class CommandDetailScreen extends StatelessWidget {
       required this.inputBoxController,
       required this.parentContext});
 
-  void _copyCommand(BuildContext context) {
+  void _copyCommand(BuildContext context, String cmd) {
     // Clipboard.setData(
     //     ClipboardData(text: Uri.decodeComponent(command[1]) ?? ""));
-    inputBoxController(Uri.decodeComponent(command[1]));
+    inputBoxController(Uri.decodeComponent(cmd));
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text("Command applied!")));
   }
@@ -1447,7 +1619,8 @@ class CommandDetailScreen extends StatelessWidget {
               Card(
                 elevation: 5,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 color: Colors.white,
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -1455,7 +1628,7 @@ class CommandDetailScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        "Command",
+                        "Commands",
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -1463,41 +1636,126 @@ class CommandDetailScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      SelectableText(
-                        command[1] ?? "No command available.",
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black87,
-                        ),
-                      ),
+
+                      // Splitting command[1] by ";"
+                      ...(command[1] ?? "").isNotEmpty
+                          ? (command[1])
+                              .split(spliter)
+                              .asMap()
+                              .entries
+                              .map<Widget>((entry) {
+                              int index = entry.key;
+                              String cmd = entry.value.trim();
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (index ==
+                                      0) // Heading for the first command
+                                    const Padding(
+                                      padding: EdgeInsets.only(
+                                          bottom: 8.0, top: 12.0),
+                                      child: Text(
+                                        "Main Command:",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    )
+                                  else if (index ==
+                                      1) // Heading for variations (shown only once)
+                                    const Padding(
+                                      padding: EdgeInsets.only(
+                                          top: 12.0, bottom: 8.0),
+                                      child: Text(
+                                        "Variations:",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  Card(
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    elevation: 3,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: ListTile(
+                                      title: SelectableText(
+                                        "${index + 1}. $cmd", // Adds numbering
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      trailing: IconButton(
+                                        icon: const Icon(Icons.copy,
+                                            color: Colors.blue),
+                                        onPressed: () =>
+                                            _copyCommand(context, cmd),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            })
+                          : [
+                              Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                elevation: 3,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                color: Colors.white,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "No command available.",
+                                        style: TextStyle(
+                                            fontSize: 16,
+                                            color: Colors.black54),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ]
                     ],
                   ),
                 ),
               ),
 
-              const SizedBox(height: 20),
-              Center(
-                child: ElevatedButton.icon(
-                  onPressed: () => _copyCommand(context),
-                  icon: const Icon(Icons.copy, color: Colors.white),
-                  label: const Text(
-                    "Use this Command",
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12, horizontal: 30),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                    elevation: 6,
-                  ),
-                ),
-              ),
+              // const SizedBox(height: 20),
+              // Center(
+              //   child: ElevatedButton.icon(
+              //     onPressed: () => _copyCommand(context),
+              //     icon: const Icon(Icons.copy, color: Colors.white),
+              //     label: const Text(
+              //       "Use this Command",
+              //       style: TextStyle(
+              //           fontSize: 16,
+              //           fontWeight: FontWeight.w600,
+              //           color: Colors.white),
+              //     ),
+              //     style: ElevatedButton.styleFrom(
+              //       backgroundColor: Colors.blue.shade700,
+              //       padding: const EdgeInsets.symmetric(
+              //           vertical: 12, horizontal: 30),
+              //       shape: RoundedRectangleBorder(
+              //           borderRadius: BorderRadius.circular(30)),
+              //       elevation: 6,
+              //     ),
+              //   ),
+              // ),
               const SizedBox(height: 30),
               // Command Description
               Card(
@@ -1519,7 +1777,7 @@ class CommandDetailScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      Text(
+                      SelectableText(
                         (command[2] == null || (command[2] as String) == '')
                             ? "No description available."
                             : command[2],

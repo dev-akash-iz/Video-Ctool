@@ -1,0 +1,65 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Video-Ctool",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "Video-Ctool (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "Video-Ctool (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "ffmpeg_kit_flutter_full_gpl-6.0.3-LTS",
+            "cwd": "lib\\plugins\\ffmpeg_kit_flutter_full_gpl-6.0.3-LTS",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "ffmpeg_kit_flutter_full_gpl-6.0.3-LTS (profile mode)",
+            "cwd": "lib\\plugins\\ffmpeg_kit_flutter_full_gpl-6.0.3-LTS",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "ffmpeg_kit_flutter_full_gpl-6.0.3-LTS (release mode)",
+            "cwd": "lib\\plugins\\ffmpeg_kit_flutter_full_gpl-6.0.3-LTS",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "ffmpeg_kit_flutter_platform_interface-0.2.1",
+            "cwd": "lib\\plugins\\ffmpeg_kit_flutter_platform_interface-0.2.1",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "ffmpeg_kit_flutter_platform_interface-0.2.1 (profile mode)",
+            "cwd": "lib\\plugins\\ffmpeg_kit_flutter_platform_interface-0.2.1",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "ffmpeg_kit_flutter_platform_interface-0.2.1 (release mode)",
+            "cwd": "lib\\plugins\\ffmpeg_kit_flutter_platform_interface-0.2.1",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}
