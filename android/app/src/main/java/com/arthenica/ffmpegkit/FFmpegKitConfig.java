@@ -46,6 +46,9 @@ import java.util.StringTokenizer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -150,7 +153,10 @@ public class FFmpegKitConfig {
         activeLogLevel = Level.from(NativeLoader.loadLogLevel());
 
         asyncConcurrencyLimit = 10;
-        asyncExecutorService = Executors.newFixedThreadPool(asyncConcurrencyLimit);
+         // asyncExecutorService = Executors.newFixedThreadPool(asyncConcurrencyLimit);
+           asyncExecutorService = new ThreadPoolExecutor(
+            0, Integer.MAX_VALUE, 1L, TimeUnit.SECONDS, new SynchronousQueue<>());
+
 
         sessionHistorySize = 10;
         sessionHistoryMap = new LinkedHashMap<Long, Session>() {
@@ -741,6 +747,7 @@ public class FFmpegKitConfig {
         Future<?> future = executorService.submit(asyncFFmpegExecuteTask);
         ffmpegSession.setFuture(future);
     }
+    
 
     /**
      * <p>Starts an asynchronous FFprobe execution for the given session.
