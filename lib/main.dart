@@ -629,15 +629,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     // now if you run new command and not have -y if you lucky you get the same thread instance to run
     // where already file_overwrite=1 now even though the command not have -y your precious data get overrided
 
-       // sollution is to reset 
-          file_overwrite=0
-          no_file_overwrite=0
-
-          after execution function in c in ffmpeg
-          but for my case i cannot build so files 
-          so i modified ffmpegkitconfig and changed created custom thread executor in java with 0 store old thread 
-          and 0 second to remove thread
-
     // const trying = false;
 
     // if (trying) {
