@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -302,6 +303,8 @@ String bytesToSizeFormate(double totalBytes, String include) {
 
 class _VideoConverterPageState extends State<VideoConverterPage>
     with WidgetsBindingObserver {
+  static const platform = MethodChannel('com.devakash/backButtonIntermediate');
+
   final ScrollController _scrollController = ScrollController();
   String sf = '@f_'; //selected file string
   String fsl = '@s_'; // file save location
@@ -339,6 +342,13 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     sIdeEffectFunction?.call(result);
   }
 
+  Future<bool> onBackButtonPressed(MethodCall call) async {
+    if (call.method == "handleBackButtonPress") {
+      return _ConversionSessionOngoing;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -351,6 +361,8 @@ class _VideoConverterPageState extends State<VideoConverterPage>
         _openAddCommandScreen(isLocalSave: true);
       })
     ];
+
+    platform.setMethodCallHandler(onBackButtonPressed);
     //_loadSettings();
   }
 
@@ -513,6 +525,7 @@ class _VideoConverterPageState extends State<VideoConverterPage>
         information.write('\n');
       }
       setState(() {
+        isSwitched = true;
         selectedFilePath = filePath;
         _enableoverrideFile = false;
         _isError = false;
@@ -649,134 +662,132 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     // Fetch total duration using FFprobe
     int totalDuration = await getVideoDuration(selectedFilePath!);
     String everyLoopLog = "";
-    FFmpegKit.cancel().then((session) async {
-      // Start the FFmpeg session
-      FFmpegKit.executeAsync(
-        executableCommand,
-        (session) async {
-          final returnCode = await session.getReturnCode();
 
-          if (ReturnCode.isSuccess(returnCode)) {
-            setState(() {
-              _enableoverrideFile = false;
-              _isError = false;
-              isConverting = false;
-              _scrollToBottom();
-            });
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text("Success"),
-                content: const Text("File converted successfully! Saved"),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context); // Close the dialog first
-                      _openAddCommandScreen(); // Open the form screen
-                    },
-                    child: const Text("Upload This Command"),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("OK"),
-                  ),
-                ],
-              ),
-            );
-          } else if (ReturnCode.isCancel(returnCode)) {
-            setState(() {
-              isConverting = false;
-              _isError = true;
-              _scrollToBottom();
-            });
-            showDialog(
-                context: context,
-                builder: (_) => AlertDialog(
-                      title: const Text("Cancelled"),
-                      content: const Text("File conversion was cancelled."),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("OK"),
-                        ),
-                      ],
-                    ));
-          } else if (everyLoopLog.contains("already exists") ||
-              everyLoopLog.contains("Not overwriting - exiting")) {
-            setState(() {
-              isConverting = false;
-              _isError = true;
-              _scrollToBottom();
-            });
-            showDialog(
-              context: context,
-              builder: (thisContext) => AlertDialog(
-                title: const Text("File Exists"),
-                content: const Text(
-                    "This file already exists. Enable overwrite? Press 'Start' again to begin conversion."),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _enableoverrideFile = true; // Enable overwrite
-                      });
-                      Navigator.pop(context);
-                    },
-                    child: const Text("Overwrite"),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context), // Cancel
-                    child: const Text("Cancel"),
-                  ),
-                ],
-              ),
-            );
-          } else {
-            setState(() {
-              isConverting = false;
-              _isError = true;
-              _scrollToBottom();
-            });
-            showDialog(
-                context: context,
-                builder: (thisContext) => AlertDialog(
-                      title: const Text("Error"),
-                      content: const Text(
-                          "Conversion failed. Please check your command."),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(thisContext),
-                          child: const Text("OK"),
-                        ),
-                      ],
-                    ));
-          }
-        },
-        (log) {
+    // Start the FFmpeg session
+    FFmpegKit.executeAsync(
+      executableCommand,
+      (session) async {
+        final returnCode = await session.getReturnCode();
+
+        if (ReturnCode.isSuccess(returnCode)) {
           setState(() {
-            if (logCount >= maxLogs) {
-              logOutput.clear();
-              logCount = 0;
-            }
-
-            everyLoopLog = log.getMessage();
-            logOutput.write('${log.getMessage()}\n\n');
-            logCount++;
-
+            _enableoverrideFile = false;
+            _isError = false;
+            isConverting = false;
             _scrollToBottom();
           });
-        }, // Logs the FFmpeg process
-        (statistics) {
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text("Success"),
+              content: const Text("File converted successfully! Saved"),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close the dialog first
+                    _openAddCommandScreen(); // Open the form screen
+                  },
+                  child: const Text("Upload This Command"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK"),
+                ),
+              ],
+            ),
+          );
+        } else if (ReturnCode.isCancel(returnCode)) {
           setState(() {
-            if (totalDuration > 0) {
-              progress = (statistics.getTime() / totalDuration) * 100;
-            }
+            isConverting = false;
+            _isError = true;
+            _scrollToBottom();
           });
-        },
-      ).whenComplete(() {
+          showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                    title: const Text("Cancelled"),
+                    content: const Text("File conversion was cancelled."),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("OK"),
+                      ),
+                    ],
+                  ));
+        } else if (everyLoopLog.contains("already exists") ||
+            everyLoopLog.contains("Not overwriting - exiting")) {
+          setState(() {
+            isConverting = false;
+            _isError = true;
+            _scrollToBottom();
+          });
+          showDialog(
+            context: context,
+            builder: (thisContext) => AlertDialog(
+              title: const Text("File Exists"),
+              content: const Text(
+                  "This file already exists. Enable overwrite? Press 'Start' again to begin conversion."),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _enableoverrideFile = true; // Enable overwrite
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: const Text("Overwrite"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context), // Cancel
+                  child: const Text("Cancel"),
+                ),
+              ],
+            ),
+          );
+        } else {
+          setState(() {
+            isConverting = false;
+            _isError = true;
+            _scrollToBottom();
+          });
+          showDialog(
+              context: context,
+              builder: (thisContext) => AlertDialog(
+                    title: const Text("Error"),
+                    content: const Text(
+                        "Conversion failed. Please check your command."),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(thisContext),
+                        child: const Text("OK"),
+                      ),
+                    ],
+                  ));
+        }
         _ConversionSessionOngoing = false;
-      });
-    });
+      },
+      (log) {
+        setState(() {
+          if (logCount >= maxLogs) {
+            logOutput.clear();
+            logCount = 0;
+          }
+
+          everyLoopLog = log.getMessage();
+          logOutput.write('${log.getMessage()}\n\n');
+          logCount++;
+
+          _scrollToBottom();
+        });
+      }, // Logs the FFmpeg process
+      (statistics) {
+        setState(() {
+          if (totalDuration > 0) {
+            progress = (statistics.getTime() / totalDuration) * 100;
+          }
+        });
+      },
+    );
   }
 
   void cancelConversion() {
