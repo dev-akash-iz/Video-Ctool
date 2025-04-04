@@ -43,6 +43,7 @@ class FileDetails {
       _isFolder = true;
       _isValidExtension = true;
       _fileName = _filePath.substring(_filePath.lastIndexOf("/") + 1);
+      _fileNameSmall = _fileName.toLowerCase();
     } else if (_extractFileData(_filePath) &&
         _listExtension[_fileExtension] == null) {
       _isValidExtension = false;

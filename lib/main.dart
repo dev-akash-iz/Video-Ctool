@@ -301,6 +301,23 @@ String bytesToSizeFormate(double totalBytes, String include) {
   return '$result $include';
 }
 
+bool stringIsEmpty(String? value) {
+  return value == null || value.isEmpty;
+}
+
+String alertUserOnIssueOnStart(
+    bool isFileNotPresent, bool isCommandNotPresent) {
+  if (isFileNotPresent && isCommandNotPresent) {
+    return "Please select a file and enter a conversion command.";
+  } else if (isFileNotPresent) {
+    return "Please select a file.";
+  } else if (isCommandNotPresent) {
+    return "Please enter a conversion command.";
+  }
+
+  return "";
+}
+
 class _VideoConverterPageState extends State<VideoConverterPage>
     with WidgetsBindingObserver {
   static const platform = MethodChannel('com.devakash/backButtonIntermediate');
@@ -331,9 +348,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   String _fileExtension = "";
   List<ActionBuilder>? actions = [];
   bool _enableoverrideFile = false;
-
   static const int maxLogs = 500;
   int logCount = 0;
+  double _scrollPositionFile = 0.0;
+  double _scrollPositionInfo = 0.0;
 
   void updateCommandFromApi(
       void Function(List<dynamic>)? sIdeEffectFunction) async {
@@ -347,6 +365,24 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       return _ConversionSessionOngoing;
     }
     return false;
+  }
+
+  void _saveScrollPosition() {
+    if (isSwitched) {
+      _scrollPositionFile = _scrollController.position.pixels;
+    } else {
+      _scrollPositionInfo = _scrollController.position.pixels;
+    }
+  }
+
+  void _restoreScrollPosition() {
+    if (!_scrollController.hasClients) return;
+
+    if (isSwitched) {
+      _scrollController.jumpTo(_scrollPositionFile);
+    } else {
+      _scrollController.jumpTo(_scrollPositionInfo);
+    }
   }
 
   @override
@@ -545,21 +581,20 @@ class _VideoConverterPageState extends State<VideoConverterPage>
   void startConversion() async {
     if (_ConversionSessionOngoing) return;
     _ConversionSessionOngoing = true;
-
-    setState(() {
-      _isError = false;
-      logOutput.clear();
-    });
-
+    bool isFileNotPresent = stringIsEmpty(selectedFilePath);
+    bool isCommandNotPresent = stringIsEmpty(conversionCommand);
     var status = await requestStoragePermission();
-    if (selectedFilePath == null || conversionCommand.isEmpty || !status) {
+    if (isFileNotPresent || isCommandNotPresent || !status) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text("Error"),
-          content: Text(status
-              ? "Please select a file and enter a conversion command."
-              : "Please provide storage permission, to store data on download"),
+          title: const Text("Error", textAlign: TextAlign.center),
+          content: Text(
+              status
+                  ? alertUserOnIssueOnStart(
+                      isFileNotPresent, isCommandNotPresent)
+                  : "Please grant storage permission to save files in the download folder.",
+              textAlign: TextAlign.center),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -573,24 +608,6 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     }
 
     Directory? downloadsDir = await getDownloadsDirectory();
-
-    if (downloadsDir == null) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Error"),
-          content: const Text("some issue with storage"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
-          ],
-        ),
-      );
-      _ConversionSessionOngoing = false;
-      return;
-    }
     String filterOne = conversionCommand.replaceAll(RegExp(r'\s+'), ' ').trim();
     // List<String> outputname = filterOne.split(" ");
     // String allExceptLast = outputname.length > 1
@@ -614,9 +631,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text("Error"),
+          title: const Text("Error", textAlign: TextAlign.center),
           content: const Text(
-              "Conflicting flags: Both '-y' (overwrite) and '-n' (no overwrite) are present. Please provide only one."),
+              "Conflicting flags: Both '-y' (overwrite) and '-n' (no overwrite) are present. Please provide only one.",
+              textAlign: TextAlign.center),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -652,17 +670,20 @@ class _VideoConverterPageState extends State<VideoConverterPage>
     //   executableCommand = '-y $executableCommand';
     // }
 
+    // Fetch total duration using FFprobe
+    int totalDuration = await getVideoDuration(selectedFilePath!);
+    String everyLoopLog = "";
+
+    _saveScrollPosition();
     setState(() {
+      isSwitched = false;
+      _restoreScrollPosition();
+      logOutput.clear();
       fullCommand = executableCommand;
       isConverting = true;
       progress = 0.0;
       _isError = false;
     });
-
-    // Fetch total duration using FFprobe
-    int totalDuration = await getVideoDuration(selectedFilePath!);
-    String everyLoopLog = "";
-
     // Start the FFmpeg session
     FFmpegKit.executeAsync(
       executableCommand,
@@ -679,8 +700,11 @@ class _VideoConverterPageState extends State<VideoConverterPage>
           showDialog(
             context: context,
             builder: (_) => AlertDialog(
-              title: const Text("Success"),
-              content: const Text("File converted successfully! Saved"),
+              title: const Text("Success", textAlign: TextAlign.center),
+              content: const Text(
+                "File saved successfully.",
+                textAlign: TextAlign.center,
+              ),
               actions: [
                 TextButton(
                   onPressed: () {
@@ -705,8 +729,9 @@ class _VideoConverterPageState extends State<VideoConverterPage>
           showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                    title: const Text("Cancelled"),
-                    content: const Text("File conversion was cancelled."),
+                    title: const Text("Cancelled", textAlign: TextAlign.center),
+                    content: const Text("File conversion was cancelled.",
+                        textAlign: TextAlign.center),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
@@ -724,9 +749,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
           showDialog(
             context: context,
             builder: (thisContext) => AlertDialog(
-              title: const Text("File Exists"),
+              title: const Text("File Exists", textAlign: TextAlign.center),
               content: const Text(
-                  "This file already exists. Enable overwrite? Press 'Start' again to begin conversion."),
+                  "This file already exists. Enable overwrite? Press 'Start' again to begin conversion.",
+                  textAlign: TextAlign.center),
               actions: [
                 TextButton(
                   onPressed: () {
@@ -753,9 +779,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
           showDialog(
               context: context,
               builder: (thisContext) => AlertDialog(
-                    title: const Text("Error"),
+                    title: const Text("Error", textAlign: TextAlign.center),
                     content: const Text(
-                        "Conversion failed. Please check your command."),
+                        "Conversion failed. Please check your command.",
+                        textAlign: TextAlign.center),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(thisContext),
@@ -941,8 +968,10 @@ class _VideoConverterPageState extends State<VideoConverterPage>
                               activeColor: Colors.blue,
                               inactiveThumbColor: Colors.green,
                               onChanged: (value) {
+                                _saveScrollPosition();
                                 setState(() {
                                   isSwitched = value;
+                                  _restoreScrollPosition();
                                 });
                               },
                             ),
@@ -1144,8 +1173,8 @@ class _CustomFilePickerState extends State<CustomFilePicker> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Error"),
-        content: Text(message),
+        title: const Text("Error", textAlign: TextAlign.center),
+        content: Text(message, textAlign: TextAlign.center),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
