@@ -1,4 +1,6 @@
-const Map<String, String> languageNames = {
+// ignore_for_file: constant_identifier_names
+
+const Map<String, String> LANGUAGE_NAME = {
   "afr": "Afrikaans",
   "alb": "Albanian",
   "amh": "Amharic",
@@ -93,25 +95,63 @@ const Map<String, String> languageNames = {
   "yid": "Yiddish",
 };
 
-String getLanguageName(String? code) {
-  if (code == null || code.isEmpty) {
-    return "Unknown";
-  }
-  return languageNames[code] ?? code;
-}
+const String SPACE = '   ';
 
-String formatDuration(dynamic duration) {
-  double seconds = double.tryParse(duration.toString()) ?? 0.0;
-  int totalSeconds = seconds.round(); // Convert to nearest whole number
-  int hours = totalSeconds ~/ 3600;
-  int minutes = (totalSeconds % 3600) ~/ 60;
-  int secs = totalSeconds % 60;
+const List<double> GENERAL_BPP_RANGE = [
+  0.03, // Extremely efficient (e.g., AV1 at low bitrate)
+  0.05, // Common for H.264, H.265, VP9 at lower bitrates
+  0.08, // Medium quality across various codecs
+  0.1, // Good balance of quality and efficiency
+  0.15, // Higher quality, used for MPEG-4, VP9, high-bitrate H.264
+  0.2, // Approaching lossless for some codecs
+  0.25, // Very high quality, MPEG-2, unoptimized encodes
+  0.3, // Near lossless or inefficient encoding
+  0.35, // High-bitrate MPEG-2, archival quality
+];
 
-  // Build formatted output dynamically
-  List<String> parts = [];
-  if (hours > 0) parts.add('${hours}h');
-  if (minutes > 0) parts.add('${minutes}m');
-  if (secs > 0 || parts.isEmpty) parts.add('${secs}s');
+const Map<String, List<double>> CODEC_BPP_RANGES = {
+  "h264": [
+    0.05,
+    0.08,
+    0.1,
+    0.15,
+    0.2
+  ], // Common H.264 range from low to high quality
+  "h265": [0.04, 0.06, 0.08, 0.1, 0.12], // H.265 (HEVC) is more efficient
+  "vp9": [0.05, 0.07, 0.09, 0.12, 0.15], // VP9 range
+  "av1": [0.03, 0.04, 0.06, 0.08, 0.1], // AV1 (most efficient)
+  "mpeg4": [0.12, 0.15, 0.18, 0.2, 0.25], // MPEG-4 (older, less efficient)
+  "mpeg2": [0.18, 0.2, 0.25, 0.3, 0.35], // MPEG-2 (least efficient)
+};
 
-  return parts.join(" "); // Example: "1h 23m 10s"
-}
+const Map<String, bool> LIST_EXTENSION = {
+  // Video extensions
+  ".mp4": true,
+  ".mkv": true,
+  ".mov": true,
+  ".avi": true,
+  ".wmv": true,
+  ".flv": true,
+  ".webm": true,
+  ".mpeg": true,
+  ".mpg": true,
+  ".3gp": true,
+  ".m4v": true,
+  ".ts": true,
+
+  //Audio extensions
+  ".mp3": true,
+  ".wav": true,
+  ".aac": true,
+  ".flac": true,
+  ".ogg": true,
+  ".wma": true,
+  ".m4a": true,
+  ".opus": true,
+  ".alac": true,
+  ".aiff": true,
+  ".amr": true,
+};
+
+final SLASH_CODE = '/'.codeUnitAt(0);
+final DOT_CODE = '.'.codeUnitAt(0);

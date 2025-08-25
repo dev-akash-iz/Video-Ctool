@@ -73,3 +73,7 @@ function buildGenerator(previousVersion = [], buildType = []) {
 function splitAndConvert(MajorMinorPatch) {
     return MajorMinorPatch?.split?.(".")?.map?.((value) => Number(value) || 0) || [1, 0, 0];
 }
+
+
+//commands
+//flutter build apk --release --obfuscate --split-per-abi --split-debug-info=./debug-info

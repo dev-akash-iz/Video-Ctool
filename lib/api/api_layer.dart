@@ -9,7 +9,7 @@ const String googleScriptUrl =
     'https://script.google.com/macros/s/AKfycbwzrvcP7xSXQcuHm83Jt4rysirXVt9O20wLmr4MCUpbpwxn21FNIxRcJQ5nK0l1u5C_/exec';
 
 Future<List<dynamic>> requestCommandList() async {
-  Response response; 
+  Response response;
   // The below request is the same as above.
   try {
     response = await dio.get(googleScriptUrl);
